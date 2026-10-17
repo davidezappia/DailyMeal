@@ -31,7 +31,7 @@ const PLAN_SCHEMA = obj({
   },
   shared_meals: {
     type: 'array',
-    description: 'pasti validi per tutti i giorni (es. colazione dolce/salata, merenda). Nei giorni che rimandano a questi, lascia items vuoti',
+    description: 'pasti validi per tutti i giorni (es. colazione dolce/salata, merenda), ESCLUSO lo spuntino pre/post allenamento che va solo in workout_snack. Nei giorni che rimandano a questi (es. "vedi pagina 6") lascia items vuoti',
     items: obj({ name: str, slot, items }),
   },
   workout_snack: { ...items, description: 'spuntino pre/post allenamento; [] se assente' },
@@ -100,6 +100,8 @@ async function callLlamaCpp({ system, content, schema, maxTokens = 32000 }) {
       max_tokens: maxTokens,
       temperature: schema ? 0.4 : 0.6,
       stream: true,
+      // Reasoning models (Qwen3…) can spend the whole token budget thinking before the JSON: off for structured output.
+      ...(schema && { chat_template_kwargs: { enable_thinking: false } }),
       ...(schema && { response_format: { type: 'json_schema', json_schema: { name: 'output', strict: true, schema } } }),
     }),
   }).catch((e) => { throw new Error(`LLM locale non raggiungibile su ${LLAMACPP_URL}: ${e.message}`); });
@@ -124,15 +126,32 @@ async function callLlamaCpp({ system, content, schema, maxTokens = 32000 }) {
   try { return JSON.parse(text); } catch { throw new Error('Il LLM locale ha restituito JSON non valido'); }
 }
 
-export function parsePlan(pdfBase64) {
-  return call({
+export async function parsePlan(pdfBase64) {
+  return cleanPlan(await call({
     system: 'Sei un assistente che digitalizza piani alimentari redatti da nutrizionisti. Trascrivi fedelmente: non inventare alimenti né cambiare grammature.',
     content: [
       { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
       { type: 'text', text: 'Estrai questo piano alimentare nello schema richiesto. Mantieni gli alimenti in italiano come scritti.' },
     ],
     schema: PLAN_SCHEMA,
-  });
+  }));
+}
+
+/** Fixes what smaller models get wrong despite the schema descriptions. */
+export function cleanPlan(plan) {
+  const workout = /allenament|workout/i;
+  const shared = plan.shared_meals.filter((m) => !(workout.test(m.name) && plan.workout_snack.length));
+  const sharedSlots = new Set(shared.map((m) => m.slot));
+  // A day item like "COLAZIONE DOLCE (vedi pagina 6)" is a pointer to the shared meals, not a food.
+  const isPointer = (i) => i.options.every((o) => /vedi|pagina|pag\.|\b(colazione|merenda)\b/i.test(o) && !/\d+\s*g\b/i.test(o));
+  return {
+    ...plan,
+    shared_meals: shared,
+    days: plan.days.map((d) => ({
+      ...d,
+      meals: d.meals.map((m) => (sharedSlots.has(m.slot) && m.items.every(isPointer) ? { ...m, items: [] } : m)),
+    })),
+  };
 }
 
 /** @param {object} plan @param {string[]} dates YYYY-MM-DD */
