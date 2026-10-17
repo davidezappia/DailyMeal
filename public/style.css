@@ -211,6 +211,9 @@ details ul { color: var(--muted); }
 .chart polyline { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
 .chart circle { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
 .chart figcaption { font-size: .85rem; color: var(--muted); text-align: right; }
+.items li.warn { color: var(--danger); }
+.unverified { margin: 10px 0 0; padding: 8px 12px; border-radius: var(--radius-sm); font-size: .82rem; color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.badge.warn { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 .like { font-size: 1.25rem; }
 .like.on { color: #d6455d; }
 .like.on:hover { color: #d6455d; }

@@ -25,6 +25,13 @@ export function planChoices(plan, wd, slot) {
 
 export const DETAIL_SEP = ' · ';
 
+export const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+/** Substring match on accent-free text: "latte" also catches "fiocchi di latte" (errs on the safe side). */
+export const mentionsExcluded = (text, excluded = []) => {
+  const t = norm(text);
+  return excluded.some((x) => x.trim() && t.includes(norm(x.trim())));
+};
+
 /** An edited meal item must be one of the plan's options, optionally followed by a short detail ("100g cereali · riso basmati"). */
 export function isPlanItem(choices, item) {
   const options = choices.flatMap((g) => g.items.flatMap((i) => i.options));
@@ -73,10 +80,12 @@ export function composeDay({ date, plan, settings, events, menuFor, favorites = 
   const srcDate = addDays(date, srcWd - wd);
   const stored = menuFor(srcDate);
   const isFreeDay = chosen && wd === chosen.weekday;
+  const excluded = settings.excluded || [];
 
   let meals = templateSlots(plan, srcWd).map((slot) => {
     const m = stored?.find((x) => x.slot === slot);
     const favs = favoritesFor(plan, favorites, srcWd, slot);
+    const choices = planChoices(plan, srcWd, slot);
     return {
       favorites: favs,
       liked: !!m && favs.some((f) => f.title.toLowerCase() === m.title.toLowerCase()),
@@ -88,7 +97,10 @@ export function composeDay({ date, plan, settings, events, menuFor, favorites = 
       free: false,
       sourceDate: srcDate,
       planOptions: planOptions(plan, srcWd, slot),
-      choices: planChoices(plan, srcWd, slot),
+      choices,
+      // Menus generated before the plan guard (or edited by hand earlier) may contain off-plan foods.
+      verified: !m || m.free || (m.items || []).every((i) => isPlanItem(choices, i)),
+      excludedItems: (m?.items || []).filter((i) => mentionsExcluded(i, excluded)),
     };
   });
   if (isFreeDay) {
@@ -97,7 +109,7 @@ export function composeDay({ date, plan, settings, events, menuFor, favorites = 
       const a = meals.find((m) => m.slot === pf.slot), b = meals.find((m) => m.slot === chosen.slot);
       if (a && b) meals = meals.map((m) => (m === a ? { ...b, slot: a.slot, label: a.label } : m === b ? { ...a, slot: b.slot, label: b.label } : m));
     }
-    meals = meals.map((m) => (m.slot === chosen.slot ? { ...m, free: true, title: 'Pasto libero', items: [], planOptions: [plan.free_meal?.rule].filter(Boolean) } : m));
+    meals = meals.map((m) => (m.slot === chosen.slot ? { ...m, free: true, verified: true, excludedItems: [], title: 'Pasto libero', items: [], planOptions: [plan.free_meal?.rule].filter(Boolean) } : m));
   }
 
   const sport = events.sport ?? (settings.sport_days || []).includes(wd);
@@ -111,6 +123,7 @@ export function composeDay({ date, plan, settings, events, menuFor, favorites = 
     sport,
     note: events.note || '',
     meals,
+    excluded,
     workoutSnack: sport ? plan.workout_snack : [],
     eatingOut: plan.eating_out.map(({ name, kind, items }) => ({ name, kind, items })),
     tips: tipsFor({ date, plan, sport, meals, isFreeDay, chosen }),

@@ -2,7 +2,8 @@ import express from 'express';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { q } from './db.js';
 import { parsePlan, generateMenu, ask, cleanPlan, SLOTS, PROVIDER, isoWeekday } from './ai.js';
-import { composeDay, addDays, planChoices, isPlanItem } from './day.js';
+import { composeDay, addDays, planChoices, isPlanItem, mentionsExcluded } from './day.js';
+import { sanitizeMeal, vocabulary } from './guard.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,12 +57,19 @@ function runJob(uid, label, fn) {
 
 async function fillMenu(uid, from, days) {
   const plan = loadPlan(uid);
+  const excluded = q.settings(uid).excluded || [];
+  const vocab = vocabulary(plan);
   const dates = Array.from({ length: days }, (_, i) => addDays(from, i));
   const weeks = [];
   for (let i = 0; i < dates.length; i += 7) weeks.push(dates.slice(i, i + 7));
   // One call per week, in parallel: faster than one long generation.
   await Promise.all(weeks.map(async (w) => {
-    for (const d of await generateMenu(plan, w, q.favorites(uid))) if (w.includes(d.date)) q.saveMenuDay(uid, d.date, d.meals);
+    for (const d of await generateMenu(plan, w, q.favorites(uid), excluded)) {
+      if (!w.includes(d.date)) continue;
+      // Never store what the model wrote as-is: rebuild every meal from plan options.
+      const meals = d.meals.map((m) => sanitizeMeal(plan, isoWeekday(d.date), m, vocab, excluded)).filter(Boolean);
+      q.saveMenuDay(uid, d.date, meals);
+    }
   }));
 }
 
@@ -154,6 +162,8 @@ app.put('/api/menu/:date/:slot', (req, res) => {
     if (!items.every((i) => isPlanItem(choices, i))) return bad(res, 'Alcuni alimenti non sono previsti dal piano');
     meal = { slot, title: text(req.body.title, 120) || slot, items, free: false };
   }
+  const excluded = q.settings(req.user.id).excluded || [];
+  if (meal.items.some((i) => mentionsExcluded(i, excluded))) return bad(res, 'Il pasto contiene alimenti che hai escluso (intolleranze)');
   const meals = (q.menuDay(req.user.id, date) || []).filter((m) => m.slot !== slot);
   q.saveMenuDay(req.user.id, date, [...meals, meal]);
   // A meal the user composed themselves is one they like: keep it to suggest again.
@@ -210,6 +220,8 @@ app.put('/api/settings', (req, res) => {
   const settings = {
     sport_days: days(req.body.sport_days),
     work_lunch_days: days(req.body.work_lunch_days),
+    excluded: Array.isArray(req.body.excluded)
+      ? [...new Set(req.body.excluded.map((x) => text(x, 40).toLowerCase()).filter(Boolean))].slice(0, 30) : [],
     free_meal: Number.isInteger(fm.weekday) && fm.weekday >= 1 && fm.weekday <= 7 && SLOTS.includes(fm.slot) ? { weekday: fm.weekday, slot: fm.slot } : null,
   };
   q.saveSettings(req.user.id, settings);

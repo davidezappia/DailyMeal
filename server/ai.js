@@ -47,18 +47,27 @@ const PLAN_SCHEMA = obj({
   sport_tips: { ...strs, description: 'consigli legati all\'attività fisica; [] se assenti' },
 });
 
-const MENU_SCHEMA = obj({
-  days: {
-    type: 'array',
-    items: obj({
-      date: str,
-      meals: {
-        type: 'array',
-        items: obj({ slot, title: { ...str, description: 'nome del piatto, breve' }, items: { ...strs, description: 'alimenti concreti con grammature' }, free: { type: 'boolean' } }),
-      },
-    }),
-  },
-});
+/** Menu schema where every food must be one of the plan's own options (enum), so the model can't invent ingredients. */
+function menuSchema(plan) {
+  const options = [...new Set([...plan.days.flatMap((d) => d.meals), ...plan.shared_meals]
+    .flatMap((m) => m.items.flatMap((i) => i.options)))];
+  const pick = obj({
+    option: { type: 'string', enum: options, description: 'alternativa del piano, copiata identica' },
+    detail: { ...str, description: `specifica breve dell'alimento scelto (es. "riso basmati", "zucchine"), "" se non serve. Nessun ingrediente aggiuntivo` },
+  });
+  return obj({
+    days: {
+      type: 'array',
+      items: obj({
+        date: str,
+        meals: {
+          type: 'array',
+          items: obj({ slot, title: { ...str, description: 'nome breve del piatto, composto solo dagli alimenti scelti' }, items: { type: 'array', items: pick }, free: { type: 'boolean' } }),
+        },
+      }),
+    },
+  });
+}
 
 function call(args) {
   return PROVIDER === 'llamacpp' ? callLlamaCpp(args) : callClaude(args);
@@ -171,8 +180,10 @@ const MAX_FAVORITES_IN_PROMPT = 20;
 /**
  * @param {object} plan @param {string[]} dates YYYY-MM-DD
  * @param {Array<{slot:string, weekday:number, title:string, items:string[]}>} favorites meals the user liked
+ * @param {string[]} excluded foods the user must avoid (intolerances)
+ * Returns raw model output: callers must pass each meal through guard.sanitizeMeal.
  */
-export async function generateMenu(plan, dates, favorites = []) {
+export async function generateMenu(plan, dates, favorites = [], excluded = []) {
   const days = dates.map((d) => `${d} (weekday ${isoWeekday(d)})`).join('\n');
   const favs = favorites.slice(0, MAX_FAVORITES_IN_PROMPT)
     .map((f) => `- ${f.slot}, weekday ${f.weekday}: ${f.title} (${f.items.join(', ')})`).join('\n');
@@ -185,12 +196,14 @@ export async function generateMenu(plan, dates, favorites = []) {
 
 Regole:
 - Per ogni giorno usa lo schema del suo weekday; per i pasti che rimandano a shared_meals scegli tra quelli.
-- Per ogni alimento obbligatorio scegli UNA alternativa, rispettando esattamente le grammature. Includi i facoltativi solo se ci stanno bene.
+- Per ogni alimento obbligatorio scegli UNA alternativa: "option" deve essere copiata identica dal piano. Includi i facoltativi solo se ci stanno bene.
+- "detail" serve solo a specificare l'alternativa scelta (es. quale cereale, quale verdura o frutta di stagione). NON aggiungere ingredienti, salse o condimenti che il piano non prevede.
 - Varia le scelte tra i giorni (stessa alternativa al massimo 2 volte a settimana), usa frutta e verdura di stagione per la data.
-- "title" è un piatto concreto (es. "Riso basmati con zucchine e pesto"), "items" la lista pesata degli ingredienti.
+- "title" è il nome del piatto composto SOLO dagli alimenti scelti (es. "Riso basmati con zucchine").${excluded.length ? `
+- L'utente NON può mangiare: ${excluded.join(', ')}. Non scegliere mai alternative che li contengono.` : ''}
 - Pasto libero: free=true, title "Pasto libero", items [].
 - Non aggiungere lo spuntino pre/post allenamento: lo gestisce l'app.${favRule}`,
-    schema: MENU_SCHEMA,
+    schema: menuSchema(plan),
   });
   return out;
 }

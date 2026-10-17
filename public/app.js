@@ -141,7 +141,8 @@ function mealCard(m, day) {
     : '';
   const outBlock = m.out === 'lavoro' ? workBlock(m, day) : m.out === 'ristorante' ? restaurantBlock(day) : '';
   const restaurant = m.out === 'ristorante';
-  const planned = m.items.length ? `<ul class="items">${m.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`
+  const planned = m.items.length ? `<ul class="items">${m.items.map((i) => m.excludedItems.includes(i) ? `<li class="warn">⚠ ${esc(i)} <strong>(alimento escluso)</strong></li>` : `<li>${esc(i)}</li>`).join('')}</ul>${
+      m.generated && !m.verified ? '<p class="unverified">⚠ Pasto creato prima del controllo sul piano: potrebbe contenere alimenti non previsti. Modificalo con ✎ o rigenera il menu.</p>' : ''}`
     : !m.free && m.planOptions.length ? planList(m.planOptions) : '';
   return `
     <article class="meal card slot-${m.slot} ${m.free ? 'free' : ''} ${m.out ? 'is-out' : ''}">
@@ -275,13 +276,15 @@ function preselect(items, current) {
   });
 }
 
-function pickRows(items, picks) {
+function pickRows(items, picks, excluded) {
+  const isExcluded = (o) => excluded.some((x) => o.toLowerCase().includes(x));
   return items.map((it, k) => {
     const p = picks[k];
     const field = it.options.length === 1 && !it.optional
       ? `<p class="fixed">${esc(it.options[0])}</p><input type="hidden" name="opt${k}" value="${esc(it.options[0])}">`
       : `<select name="opt${k}" aria-label="Alimento ${k + 1}">${it.optional ? `<option value="" ${p.value ? '' : 'selected'}>— Facoltativo: non lo prendo —</option>` : ''}${
-        it.options.map((o) => `<option ${o === p.value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+        it.options.map((o) => isExcluded(o) ? `<option disabled>${esc(o)} (escluso)</option>`
+          : `<option ${o === p.value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
     return `<div class="pick">${field}<input name="det${k}" value="${esc(p.detail)}" maxlength="80" placeholder="Dettaglio facoltativo, es. riso basmati" aria-label="Dettaglio alimento ${k + 1}"></div>`;
   }).join('');
 }
@@ -309,7 +312,7 @@ function editMeal(day, m) {
     </form>`;
   const form = document.getElementById('ef');
   const showGroup = () => {
-    form.querySelector('#picks').innerHTML = pickRows(groups[gi].items, guesses[gi]);
+    form.querySelector('#picks').innerHTML = pickRows(groups[gi].items, guesses[gi], day.excluded);
     form.querySelectorAll('[data-group]').forEach((b) => b.setAttribute('aria-pressed', Number(b.dataset.group) === gi));
   };
   form.querySelectorAll('[data-group]').forEach((b) => b.onclick = () => { gi = Number(b.dataset.group); showGroup(); });
@@ -359,6 +362,7 @@ async function menuPage() {
             <div class="badges">
               ${d.sport ? '<span class="badge sport">Sport</span>' : ''}
               ${d.meals.some((m) => m.free) ? '<span class="badge free">Pasto libero</span>' : ''}
+              ${d.meals.some((m) => (m.generated && !m.verified) || m.excludedItems.length) ? '<span class="badge warn">⚠ Da verificare</span>' : ''}
               ${d.meals.filter((m) => m.out).map((m) => `<span class="badge out">${esc(m.label)} · ${OUT_LABEL[m.out]}</span>`).join('')}
             </div>
           </div>
@@ -457,6 +461,9 @@ async function profilePage() {
       <fieldset><legend>Giorni di sport</legend>${dayChips('sport', s.sport_days)}
         <p class="hint">In questi giorni compare lo spuntino pre/post allenamento. Puoi cambiare il singolo giorno dalla home.</p></fieldset>
       <fieldset><legend>Pranzo al lavoro</legend>${dayChips('work', s.work_lunch_days)}</fieldset>
+      <fieldset><legend>Intolleranze e alimenti da evitare</legend>
+        <input name="excluded" value="${esc((s.excluded || []).join(', '))}" placeholder="Es. lattosio, ricotta, frutta secca, crostacei" autocomplete="off">
+        <p class="hint">Separati da virgola. Il menu non li propone e nelle modifiche sono disattivati. Il controllo è sul nome: scrivi gli alimenti come compaiono nel piano (es. "latte", "formaggio").</p></fieldset>
       <button class="btn primary">Salva</button>
     </form>
 
@@ -491,9 +498,14 @@ async function profilePage() {
     const body = {
       sport_days: f.getAll('sport').map(Number),
       work_lunch_days: f.getAll('work').map(Number),
+      excluded: String(f.get('excluded') || '').split(',').map((x) => x.trim()).filter(Boolean),
       free_meal: Number(f.get('fm_wd')) ? { weekday: Number(f.get('fm_wd')), slot: f.get('fm_slot') } : null,
     };
-    try { me.settings = await api('/settings', { method: 'PUT', body }); toast('Impostazioni salvate', 'ok'); } catch (err) { toast(err.message, 'error'); }
+    try {
+      const before = (me.settings.excluded || []).join(',');
+      me.settings = await api('/settings', { method: 'PUT', body });
+      toast(me.settings.excluded.join(',') !== before ? 'Salvato. Rigenera il menu da "Menu" per applicare le esclusioni ai giorni già creati' : 'Impostazioni salvate', 'ok');
+    } catch (err) { toast(err.message, 'error'); }
   };
   document.getElementById('wf').onsubmit = async (e) => {
     e.preventDefault();
