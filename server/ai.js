@@ -15,7 +15,8 @@ const str = { type: 'string' };
 const strs = { type: 'array', items: str };
 const item = obj({ options: { ...strs, description: 'alternative separate da "oppure", ognuna con grammatura' }, optional: { type: 'boolean', description: 'true se FACOLTATIVO' } });
 const items = { type: 'array', items: item };
-const slot = { type: 'string', enum: SLOTS };
+const slot = { type: 'string', enum: SLOTS, description: 'spuntino = metà mattina (tra colazione e pranzo); merenda = pomeriggio (tra pranzo e cena), anche se il piano la chiama "spuntino"' };
+const OUT_KINDS = ['lavoro', 'ristorante', 'entrambi'];
 
 const PLAN_SCHEMA = obj({
   title: str,
@@ -31,11 +32,15 @@ const PLAN_SCHEMA = obj({
   },
   shared_meals: {
     type: 'array',
-    description: 'pasti validi per tutti i giorni (es. colazione dolce/salata, merenda), ESCLUSO lo spuntino pre/post allenamento che va solo in workout_snack. Nei giorni che rimandano a questi (es. "vedi pagina 6") lascia items vuoti',
+    description: 'pasti validi per tutti i giorni (es. colazione dolce/salata, merenda), ESCLUSI lo spuntino pre/post allenamento (va in workout_snack) e il pranzo al lavoro/mensa (va in eating_out). Nei giorni che rimandano a questi (es. "vedi pagina 6") lascia items vuoti',
     items: obj({ name: str, slot, items }),
   },
   workout_snack: { ...items, description: 'spuntino pre/post allenamento; [] se assente' },
-  eating_out: { type: 'array', description: 'indicazioni per pasti fuori/mensa/ristorante; [] se assenti', items: obj({ name: str, items }) },
+  eating_out: {
+    type: 'array',
+    description: 'indicazioni per pasti fuori casa; [] se assenti',
+    items: obj({ name: str, kind: { type: 'string', enum: OUT_KINDS, description: 'lavoro = pranzo in ufficio/mensa/bar; ristorante = ristorante, pizza, sushi, aperitivo; entrambi = valido in tutti e due i casi' }, items }),
+  },
   free_meal: obj({ weekday: { type: 'integer', description: '0 se assente' }, slot: { type: 'string', enum: [...SLOTS, ''] }, rule: str }),
   glossary: { type: 'array', description: 'definizioni categorie (pesce magro, carne magra, verdura...) con esempi', items: obj({ term: str, definition: str }) },
   tips: { ...strs, description: 'consigli e regole generali, brevi e autonomi (idratazione, cotture, reflusso, peso...)' },
@@ -138,14 +143,21 @@ export async function parsePlan(pdfBase64) {
 }
 
 /** Fixes what smaller models get wrong despite the schema descriptions. */
+// Idempotent: also applied when reading plans saved before a fix.
 export function cleanPlan(plan) {
   const workout = /allenament|workout/i;
-  const shared = plan.shared_meals.filter((m) => !(workout.test(m.name) && plan.workout_snack.length));
+  const atWork = /lavoro|mensa|ufficio/i;
+  const shared = plan.shared_meals.filter((m) => !(workout.test(m.name) && plan.workout_snack.length) && !atWork.test(m.name));
   const sharedSlots = new Set(shared.map((m) => m.slot));
   // A day item like "COLAZIONE DOLCE (vedi pagina 6)" is a pointer to the shared meals, not a food.
   const isPointer = (i) => i.options.every((o) => /vedi|pagina|pag\.|\b(colazione|merenda)\b/i.test(o) && !/\d+\s*g\b/i.test(o));
+  const guessKind = (name) => (atWork.test(name) ? 'lavoro' : /ristorante|pizz|sushi|aperitiv|cinese|pok|pasto preferito/i.test(name) ? 'ristorante' : 'entrambi');
   return {
     ...plan,
+    eating_out: [
+      ...plan.shared_meals.filter((m) => atWork.test(m.name)).map(({ name, items }) => ({ name, kind: 'lavoro', items })),
+      ...plan.eating_out.map((o) => ({ ...o, kind: OUT_KINDS.includes(o.kind) ? o.kind : guessKind(o.name) })),
+    ],
     shared_meals: shared,
     days: plan.days.map((d) => ({
       ...d,
@@ -185,7 +197,7 @@ Regole:
 
 export function ask(plan, context, question) {
   return call({
-    system: `Sei l'assistente del piano alimentare dell'utente. Rispondi in italiano, in modo breve e pratico (max ~120 parole), basandoti SOLO sul piano qui sotto e sulla giornata corrente. Se la domanda esce dal piano o riguarda sintomi/salute, suggerisci di sentire il nutrizionista.\n\nPIANO:\n${JSON.stringify(plan)}`,
+    system: `Sei l'assistente del piano alimentare dell'utente. Rispondi in italiano, in modo breve e pratico (max ~120 parole), basandoti SOLO sul piano qui sotto e sulla giornata corrente. Se la domanda esce dal piano o riguarda sintomi/salute, suggerisci di sentire il nutrizionista. Formattazione: solo frasi brevi, elenchi con "- " e **grassetto**; niente tabelle né titoli.\n\nPIANO:\n${JSON.stringify(plan)}`,
     content: `Giornata corrente:\n${JSON.stringify(context)}\n\nDomanda: ${question}`,
     maxTokens: 4000,
     effort: 'low',

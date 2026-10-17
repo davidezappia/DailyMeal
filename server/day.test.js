@@ -55,7 +55,7 @@ test('moving free slot to lunch moves lunch to dinner', () => {
 });
 
 test('sport day from settings adds workout snack, event overrides it', () => {
-  assert.deepEqual(day(FRI, { sport_days: [5] }).workoutSnack, ['pane e marmellata']);
+  assert.deepEqual(day(FRI, { sport_days: [5] }).workoutSnack, [it('pane e marmellata')]);
   assert.equal(day(FRI, { sport_days: [5] }, { sport: false }).sport, false);
 });
 
@@ -80,4 +80,10 @@ test('missing menu falls back to plan options, shared meals for breakfast', () =
   const d = day('2026-10-19');
   assert.equal(meal(d, 'pranzo').generated, false);
   assert.deepEqual(meal(d, 'colazione').planOptions, ['▸ Colazione dolce', 'fette biscottate']);
+});
+
+test('slots follow the plan order: an afternoon spuntino stays between lunch and dinner', () => {
+  const p = { ...plan, days: plan.days.map((d) => ({ ...d, meals: [d.meals[0], d.meals[1], { slot: 'spuntino', free: false, items: [it('frutta')] }, d.meals[2]] })) };
+  const d = composeDay({ date: FRI, plan: p, settings: {}, events: {}, menuFor: () => null });
+  assert.deepEqual(d.meals.map((m) => m.slot), ['colazione', 'pranzo', 'spuntino', 'cena']);
 });

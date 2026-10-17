@@ -15,6 +15,7 @@ const plan = {
     { name: 'SPUNTINO PRE O POST WORKOUT', slot: 'spuntino', items: [it('2 fette di pane')] },
   ],
   workout_snack: [it('2 fette di pane')],
+  eating_out: [],
 };
 
 test('cleanPlan empties pointers to shared meals and drops the duplicated workout snack', () => {
@@ -24,4 +25,15 @@ test('cleanPlan empties pointers to shared meals and drops the duplicated workou
   assert.deepEqual(mer.items, []);
   assert.equal(pranzo.items.length, 1);
   assert.deepEqual(p.shared_meals.map((m) => m.slot), ['colazione', 'merenda']);
+});
+
+test('cleanPlan moves the work lunch out of shared meals and classifies eating-out options', () => {
+  const p = cleanPlan({
+    ...plan,
+    shared_meals: [...plan.shared_meals, { name: 'Pranzo in settimana al lavoro/ mensa', slot: 'pranzo', items: [it('Secondo + verdure')] }],
+    eating_out: [{ name: 'Sushi', items: [it('max 20 pezzi')] }, { name: 'Opzione 1', items: [it('primo semplice')] }],
+  });
+  assert.equal(p.shared_meals.some((m) => m.slot === 'pranzo'), false);
+  assert.deepEqual(p.eating_out.map((o) => [o.name, o.kind]), [['Pranzo in settimana al lavoro/ mensa', 'lavoro'], ['Sushi', 'ristorante'], ['Opzione 1', 'entrambi']]);
+  assert.deepEqual(cleanPlan(p), p, 'idempotent');
 });

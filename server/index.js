@@ -1,7 +1,7 @@
 import express from 'express';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { q } from './db.js';
-import { parsePlan, generateMenu, ask, SLOTS, PROVIDER, isoWeekday } from './ai.js';
+import { parsePlan, generateMenu, ask, cleanPlan, SLOTS, PROVIDER, isoWeekday } from './ai.js';
 import { composeDay, addDays } from './day.js';
 
 const app = express();
@@ -20,6 +20,7 @@ app.use(express.json({ limit: '15mb' }));
 app.use(express.static('public')); // no max-age: ETag revalidation so updates show up immediately
 
 // ---------- helpers
+const loadPlan = (uid) => { const p = q.plan(uid); return p && cleanPlan(p); };
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s));
 const text = (s, max = 300) => (typeof s === 'string' ? s.trim().slice(0, max) : '');
 const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
@@ -54,7 +55,7 @@ function runJob(uid, label, fn) {
 }
 
 async function fillMenu(uid, from, days) {
-  const plan = q.plan(uid);
+  const plan = loadPlan(uid);
   const dates = Array.from({ length: days }, (_, i) => addDays(from, i));
   const weeks = [];
   for (let i = 0; i < dates.length; i += 7) weeks.push(dates.slice(i, i + 7));
@@ -124,12 +125,12 @@ app.post('/api/plan', (req, res) => {
   ok ? res.status(202).json({ ok }) : bad(res, 'Elaborazione già in corso', 409);
 });
 
-app.get('/api/plan', (req, res) => res.json(q.plan(req.user.id)));
+app.get('/api/plan', (req, res) => res.json(loadPlan(req.user.id)));
 
 app.post('/api/menu/generate', (req, res) => {
   const { from } = req.body;
   if (!isDate(from)) return bad(res, 'Data non valida');
-  if (!q.plan(req.user.id)) return bad(res, 'Carica prima il piano');
+  if (!loadPlan(req.user.id)) return bad(res, 'Carica prima il piano');
   const ok = runJob(req.user.id, 'Creazione menu', () => fillMenu(req.user.id, from, MENU_DAYS));
   ok ? res.status(202).json({ ok }) : bad(res, 'Elaborazione già in corso', 409);
 });
@@ -164,7 +165,7 @@ app.get('/api/job', (req, res) => res.json(jobs.get(req.user.id) || null));
 
 // ---------- days
 const dayView = (uid, date) => {
-  const plan = q.plan(uid);
+  const plan = loadPlan(uid);
   return plan && composeDay({ date, plan, settings: q.settings(uid), events: q.events(uid, date), menuFor: (d) => q.menuDay(uid, d), favorites: q.favorites(uid) });
 };
 
@@ -205,7 +206,7 @@ app.put('/api/settings', (req, res) => {
 app.post('/api/ask', async (req, res) => {
   const question = text(req.body.question, 1000);
   if (!question || !isDate(req.body.date)) return bad(res, 'Domanda mancante');
-  const plan = q.plan(req.user.id);
+  const plan = loadPlan(req.user.id);
   if (!plan) return bad(res, 'Carica prima il piano');
   try {
     const day = dayView(req.user.id, req.body.date);

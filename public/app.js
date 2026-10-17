@@ -139,12 +139,10 @@ function mealCard(m, day) {
     ? `<div class="seg" role="group" aria-label="Dove mangi a ${m.label.toLowerCase()}">${Object.entries(OUT_LABEL).map(([k, v]) =>
         `<button data-out="${m.slot}" data-kind="${k}" aria-pressed="${(m.out || 'casa') === k}">${v}</button>`).join('')}</div>`
     : '';
-  const outBlock = m.out ? `
-    <div class="out-note">
-      <strong>${m.out === 'lavoro' ? `💼 ${esc(m.label)} al lavoro` : '🍴 Al ristorante'}</strong>
-      <p>${m.out === 'lavoro' ? 'Meglio portare da casa il pasto qui sotto. Se mangi in mensa/bar scegli una di queste opzioni:' : 'Scegli una di queste opzioni:'}</p>
-      ${day.eatingOut.map((o) => `<details><summary>${esc(o.name)}</summary><ul>${o.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></details>`).join('')}
-    </div>` : '';
+  const outBlock = m.out === 'lavoro' ? workBlock(m, day) : m.out === 'ristorante' ? restaurantBlock(day) : '';
+  const restaurant = m.out === 'ristorante';
+  const planned = m.items.length ? `<ul class="items">${m.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`
+    : !m.free && m.planOptions.length ? planList(m.planOptions) : '';
   return `
     <article class="meal card slot-${m.slot} ${m.free ? 'free' : ''} ${m.out ? 'is-out' : ''}">
       <header>
@@ -154,14 +152,45 @@ function mealCard(m, day) {
           <button class="icon-btn" data-edit="${m.slot}" aria-label="Modifica ${esc(m.label)}">✎</button>
         </span>`}
       </header>
-      <h3>${esc(m.title)}</h3>
-      ${m.free ? '<p class="muted">Qualsiasi alimento, con buonsenso sulle quantità. 🎉</p>' : ''}
-      ${m.items.length ? `<ul class="items">${m.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`
-        : !m.free && m.planOptions.length ? `<ul class="items opts">${m.planOptions.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
-      ${outBlock}
+      ${restaurant ? `<h3>Al ristorante</h3>${outBlock}<details class="plan-opts"><summary>Il pasto previsto: ${esc(m.title)}</summary>${planned}</details>` : `
+        <h3>${esc(m.title)}</h3>
+        ${m.free ? '<p class="muted">Qualsiasi alimento, con buonsenso sulle quantità. 🎉</p>' : ''}
+        ${planned}
+        ${outBlock}`}
       ${outOpts}
-      ${m.items.length && m.planOptions.length && !m.free ? `<details class="plan-opts"><summary>Alternative dal piano</summary><ul>${m.planOptions.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></details>` : ''}
+      ${!restaurant && m.items.length && m.planOptions.length && !m.free ? `<details class="plan-opts"><summary>Alternative dal piano</summary>${planList(m.planOptions)}</details>` : ''}
     </article>`;
+}
+
+/** Plan items as a list; an item with alternatives becomes "one of" with each choice on its own line. */
+const choices = (items) => `<ul class="choices">${items.map((i) => `<li>${i.optional ? '<span class="tag">facoltativo</span>' : ''}${
+  i.options.length > 1 ? `<span class="muted">Una a scelta tra:</span><ul>${i.options.map((o) => `<li>${esc(o)}</li>`).join('')}</ul>` : esc(i.options[0])}</li>`).join('')}</ul>`;
+
+/** Server plan lines ("▸ Name", "Facoltativo: a — oppure — b") rendered like choices(). */
+const planList = (lines) => lines.map((l) => (l.startsWith('▸ ') ? `<p class="opt-name">${esc(l.slice(2))}</p>`
+  : choices([{ optional: l.startsWith('Facoltativo: '), options: l.replace(/^Facoltativo: /, '').split(' — oppure — ') }]))).join('');
+
+const outOptions = (day, kinds) => day.eatingOut.filter((o) => kinds.includes(o.kind));
+
+function workBlock(m, day) {
+  const opts = outOptions(day, ['lavoro', 'entrambi']);
+  return `
+    <div class="out-note">
+      <strong>💼 ${esc(m.label)} al lavoro</strong>
+      <p>Porta da casa il pasto qui sopra: preparalo la sera prima e aggiungi il condimento al momento.</p>
+      ${opts.length ? `<details><summary>Se mangi in mensa o al bar</summary>${opts.map((o) => `<p class="opt-name">${esc(o.name)}</p>${choices(o.items)}`).join('')}</details>`
+        : '<p class="muted">Se mangi in mensa: scegli piatti semplici simili al pasto previsto, con verdure e poco condimento.</p>'}
+    </div>`;
+}
+
+function restaurantBlock(day) {
+  const opts = outOptions(day, ['ristorante', 'entrambi']);
+  return `
+    <div class="out-note">
+      ${opts.length ? opts.map((o) => `<details open><summary>${esc(o.name)}</summary>${choices(o.items)}</details>`).join('')
+        : '<p>Il piano non ha indicazioni per il ristorante: scegli un secondo semplice (carne o pesce alla griglia) con verdure, oppure un primo semplice, e niente fritti.</p>'}
+      <p class="muted">Se è la cena della settimana in cui vuoi sgarrare, puoi spostare qui il pasto libero dal Profilo.</p>
+    </div>`;
 }
 
 function renderDay(day) {
@@ -189,7 +218,7 @@ function renderDay(day) {
         <article class="meal card workout">
           <header><span class="slot-badge">⚡ Pre/post allenamento</span></header>
           <h3>Spuntino sport</h3>
-          <ul class="items opts">${day.workoutSnack.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+          ${choices(day.workoutSnack)}
         </article>` : ''}
     </section>
 
@@ -238,7 +267,7 @@ function editMeal(day, m) {
         `<button type="button" class="chip" data-fav="${i}">♥ ${esc(f.title)}</button>`).join('')}</div></div>` : ''}
       <label>Piatto<input name="title" value="${esc(m.generated ? m.title : '')}" placeholder="Es. Pasta al pomodoro" required></label>
       <label>Ingredienti <span class="muted">(uno per riga)</span><textarea name="items" rows="6">${esc(m.items.join('\n'))}</textarea></label>
-      ${m.planOptions.length ? `<details><summary>Cosa prevede il piano</summary><ul>${m.planOptions.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></details>` : ''}
+      ${m.planOptions.length ? `<details><summary>Cosa prevede il piano</summary>${planList(m.planOptions)}</details>` : ''}
       <label class="check"><input type="checkbox" name="favorite" checked> Salva tra i preferiti e riproponilo nei prossimi menu</label>
       <div class="row">
         <button class="btn" value="cancel" formnovalidate>Annulla</button>
@@ -300,6 +329,30 @@ async function menuPage() {
 }
 
 // ---------- ask
+/** Minimal Markdown for model answers: escapes first, then bold/italic, headings and lists. */
+function md(text) {
+  const inline = (s) => esc(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, '$1<em>$2</em>');
+  const out = [];
+  let list = null;
+  for (const line of text.trim().split('\n')) {
+    const item = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)/);
+    if (item) {
+      const tag = /^\s*\d/.test(line) ? 'ol' : 'ul';
+      if (list !== tag) { if (list) out.push(`</${list}>`); out.push(`<${tag}>`); list = tag; }
+      out.push(`<li>${inline(item[1])}</li>`);
+      continue;
+    }
+    if (list) { out.push(`</${list}>`); list = null; }
+    const h = line.match(/^#{1,6}\s+(.*)/);
+    if (h) out.push(`<p><strong>${inline(h[1])}</strong></p>`);
+    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  }
+  if (list) out.push(`</${list}>`);
+  return out.join('');
+}
+
 const SUGGESTIONS = ['Posso sostituire il pesce di oggi con della carne?', 'L\'orata è un pesce magro o semigrasso?', 'Cosa ordino in pizzeria se non è il pasto libero?', 'Quanto pesa una porzione di frutta secca?'];
 async function askPage() {
   if (!me.plan) return noPlan();
@@ -307,7 +360,7 @@ async function askPage() {
     $app.innerHTML = `
       <header class="page-head"><p class="eyebrow">Dubbi sul piano</p><h1>Chiedi</h1></header>
       <section class="chat" id="chat">
-        ${chat.length ? chat.map((m) => `<div class="bubble ${m.role}">${esc(m.text)}</div>`).join('')
+        ${chat.length ? chat.map((m) => `<div class="bubble ${m.role}">${m.role === 'bot' ? md(m.text) : esc(m.text)}</div>`).join('')
           : `<p class="muted">Fai una domanda sul tuo piano: sostituzioni, porzioni, cosa mangiare fuori…</p>
              <div class="suggest">${SUGGESTIONS.map((s) => `<button class="chip" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>`}
       </section>

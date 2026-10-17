@@ -153,6 +153,17 @@ legend { font-weight: 600; font-size: .88rem; margin-bottom: 8px; }
 details { font-size: .9rem; }
 details summary { cursor: pointer; font-weight: 600; color: var(--accent); padding: 6px 0; }
 details ul { color: var(--muted); }
+.choices { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; font-size: .92rem; }
+.choices li::marker { color: var(--c, var(--accent)); }
+.choices ul { margin-top: 4px; padding-left: 1.1em; display: flex; flex-direction: column; gap: 3px; list-style: circle; }
+.choices .tag { display: inline-block; font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--surface-2); border-radius: 6px; padding: 1px 6px; margin-right: 6px; }
+.out-note .choices { margin: 4px 0 10px; }
+.choices + .choices, .opt-name + .choices { margin-top: 6px; }
+.plan-opts .opt-name { margin: 10px 0 0; font-weight: 600; }
+.out-note .opt-name { margin: 10px 0 0; font-weight: 600; color: var(--text); }
+.bubble p { margin: 0 0 6px; } .bubble p:last-child { margin-bottom: 0; }
+.bubble ul, .bubble ol { margin: 2px 0 8px; padding-left: 1.2em; }
+.bubble.bot { white-space: normal; }
 .plan-opts { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 6px; }
 
 .tips { margin: 28px 0 14px; }

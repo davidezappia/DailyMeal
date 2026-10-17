@@ -23,10 +23,15 @@ export function favoritesFor(plan, favorites, wd, slot) {
   return favorites.filter((f) => f.slot === slot && (shared || f.weekday === wd));
 }
 
+/** Meal slots of a day in the plan's own order (a "spuntino" may be mid-afternoon); shared-only slots go in their usual place. */
 function templateSlots(plan, wd) {
-  const own = plan.days.find((d) => d.weekday === wd)?.meals.map((m) => m.slot) || [];
-  const shared = plan.shared_meals.map((m) => m.slot);
-  return SLOTS.filter((s) => own.includes(s) || shared.includes(s));
+  const order = [...new Set(plan.days.find((d) => d.weekday === wd)?.meals.map((m) => m.slot) || [])];
+  for (const s of new Set(plan.shared_meals.map((m) => m.slot))) {
+    if (order.includes(s)) continue;
+    const next = order.findIndex((o) => SLOTS.indexOf(o) > SLOTS.indexOf(s));
+    order.splice(next < 0 ? order.length : next, 0, s);
+  }
+  return order;
 }
 
 /** Free meal actually in force: user's choice, else the plan's. */
@@ -90,8 +95,8 @@ export function composeDay({ date, plan, settings, events, menuFor, favorites = 
     sport,
     note: events.note || '',
     meals,
-    workoutSnack: sport ? itemLines(plan.workout_snack) : [],
-    eatingOut: plan.eating_out.map((o) => ({ name: o.name, lines: itemLines(o.items) })),
+    workoutSnack: sport ? plan.workout_snack : [],
+    eatingOut: plan.eating_out.map(({ name, kind, items }) => ({ name, kind, items })),
     tips: tipsFor({ date, plan, sport, meals, isFreeDay, chosen }),
   };
 }
@@ -99,8 +104,8 @@ export function composeDay({ date, plan, settings, events, menuFor, favorites = 
 function tipsFor({ date, plan, sport, meals, isFreeDay, chosen }) {
   const tips = [];
   if (sport) tips.push(...(plan.sport_tips.length ? plan.sport_tips.slice(0, 2) : ['Giorno di sport: ricordati lo spuntino pre o post allenamento.']));
-  if (meals.some((m) => m.out === 'lavoro')) tips.push('Pranzo al lavoro: l\'ideale è portare il pasto previsto da casa; altrimenti scegli una delle opzioni "fuori casa".');
-  if (meals.some((m) => m.out === 'ristorante')) tips.push('Al ristorante: piatti semplici, condimenti leggeri, niente fritti. Guarda le opzioni del piano per i pasti fuori.');
+  if (meals.some((m) => m.out === 'lavoro')) tips.push('Pasto al lavoro: preparalo la sera prima in un contenitore ermetico, con il condimento a parte da aggiungere al momento.');
+  if (meals.some((m) => m.out === 'ristorante')) tips.push('Al ristorante: verdure all\'inizio, condimenti a parte, niente fritti e attenzione al pane in tavola.');
   if (isFreeDay) tips.push('Oggi c\'è il pasto libero: goditelo con buonsenso sulle quantità.');
   if (chosen && isoWeekday(addDays(date, -1)) === chosen.weekday) tips.push('Ieri pasto libero: oggi meglio non pesarsi.');
   // Rotate the plan's general tips day by day.
