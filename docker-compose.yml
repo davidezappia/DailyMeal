@@ -1,0 +1,14 @@
+services:
+  dailymeal:
+    build: .
+    container_name: dailymeal
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    volumes:
+      - dailymeal-data:/data
+    mem_limit: 256m
+
+volumes:
+  dailymeal-data:

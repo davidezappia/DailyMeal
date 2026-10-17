@@ -1,0 +1,20 @@
+{
+  "name": "dailymeal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Piano alimentare quotidiano: menu, consigli e domande sul proprio piano",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test server/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "express": "5.3.0",
+    "unpdf": "1.8.1"
+  }
+}

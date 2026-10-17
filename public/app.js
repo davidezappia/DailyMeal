@@ -1,0 +1,420 @@
+// DailyMeal SPA — vanilla JS, hash routing, no build step.
+const $app = document.getElementById('app');
+const $tabs = document.getElementById('tabs');
+const $banner = document.getElementById('banner');
+const $sheet = document.getElementById('sheet');
+
+const WD = ['', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+const WD_SHORT = ['', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
+const SLOTS = ['colazione', 'spuntino', 'pranzo', 'merenda', 'cena'];
+const SLOT_LABEL = { colazione: 'Colazione', spuntino: 'Spuntino', pranzo: 'Pranzo', merenda: 'Merenda', cena: 'Cena' };
+const OUT_LABEL = { casa: 'Casa', lavoro: 'Lavoro', ristorante: 'Ristorante' };
+
+let me = null;
+const chat = []; // in-memory chat history for the session
+
+// ---------- utils
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const localDate = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const today = () => localDate();
+const addDays = (date, n) => { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() + n); return localDate(d); };
+const fmtDate = (date, opts = { day: 'numeric', month: 'long' }) => new Date(`${date}T12:00:00`).toLocaleDateString('it-IT', opts);
+const dayName = (date) => {
+  const diff = Math.round((Date.parse(date) - Date.parse(today())) / 864e5);
+  return { 0: 'Oggi', 1: 'Domani', [-1]: 'Ieri' }[diff] || WD[new Date(`${date}T12:00:00`).getDay() || 7];
+};
+
+async function api(path, opts = {}) {
+  const res = await fetch(`/api${path}`, {
+    method: opts.method || 'GET',
+    headers: opts.body ? { 'Content-Type': 'application/json' } : {},
+    body: opts.body && JSON.stringify(opts.body),
+  });
+  if (res.status === 401 && !path.startsWith('/login')) { me = null; location.hash = '#/login'; throw new Error('Sessione scaduta'); }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error || `Errore ${res.status}`);
+  return data;
+}
+
+function toast(msg, kind = '') {
+  const t = Object.assign(document.createElement('div'), { className: `toast ${kind}`, textContent: msg, role: 'status' });
+  document.body.append(t);
+  setTimeout(() => t.remove(), 3200);
+}
+
+const loading = () => { $app.innerHTML = '<div class="loader" aria-label="Caricamento"><span></span><span></span><span></span></div>'; };
+
+// ---------- background job banner
+let polling = null;
+function watchJob(job) {
+  if (!job || job.status !== 'running') {
+    $banner.hidden = true;
+    if (job?.status === 'error') { $banner.hidden = false; $banner.className = 'error'; $banner.textContent = `${job.label}: ${job.error}`; }
+    return;
+  }
+  $banner.hidden = false;
+  $banner.className = 'running';
+  $banner.innerHTML = `<span class="spin"></span>${esc(job.label)}… ci vogliono 1-3 minuti`;
+  clearTimeout(polling);
+  polling = setTimeout(async () => {
+    const j = await api('/job').catch(() => null);
+    if (j?.status === 'running') return watchJob(j);
+    me = await api('/me');
+    watchJob(j);
+    if (j?.status === 'done') toast('Menu pronto!', 'ok');
+    route();
+  }, 4000);
+}
+
+// ---------- router
+const routes = { '': dayPage, day: dayPage, menu: menuPage, ask: askPage, profile: profilePage, login: loginPage };
+async function route() {
+  const [, name = '', arg] = location.hash.split('/');
+  if (!me && name !== 'login') {
+    try { me = await api('/me'); watchJob(me.job); } catch { return; }
+  }
+  $tabs.hidden = name === 'login';
+  const tab = name === '' || name === 'day' ? 'day' : name;
+  $tabs.querySelectorAll('a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.tab === tab));
+  window.scrollTo(0, 0);
+  await (routes[name] || dayPage)(arg).catch((e) => { $app.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; });
+}
+addEventListener('hashchange', route);
+
+// ---------- login / signup
+async function loginPage() {
+  const { open } = await fetch('/api/signup-open').then((r) => r.json());
+  let signup = false;
+  const render = () => {
+    $app.innerHTML = `
+      <section class="auth">
+        <img src="icon.svg" alt="" width="64" height="64">
+        <h1>DailyMeal</h1>
+        <p class="muted">Il tuo piano alimentare, giorno per giorno.</p>
+        <form id="f" class="card stack">
+          ${signup ? '<label>Nome<input name="name" autocomplete="name" required></label>' : ''}
+          <label>Username<input name="username" autocomplete="username" autocapitalize="none" required></label>
+          <label>Password<input name="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="${signup ? 8 : 1}" required></label>
+          <button class="btn primary">${signup ? 'Crea account' : 'Entra'}</button>
+        </form>
+        ${open ? `<button class="link" id="sw">${signup ? 'Ho già un account' : 'Crea un nuovo account'}</button>` : ''}
+      </section>`;
+    document.getElementById('sw')?.addEventListener('click', () => { signup = !signup; render(); });
+    document.getElementById('f').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(e.target));
+      try {
+        await api(signup ? '/signup' : '/login', { method: 'POST', body });
+        me = null;
+        location.hash = '#/';
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  };
+  render();
+}
+
+// ---------- day
+async function dayPage(date = today()) {
+  if (!me.plan) return noPlan();
+  loading();
+  const day = await api(`/day/${date}`);
+  renderDay(day);
+}
+
+function noPlan() {
+  $app.innerHTML = `
+    <header class="page-head"><p class="eyebrow">Ciao ${esc(me.user.name)}</p><h1>Iniziamo</h1></header>
+    <div class="empty card">
+      <div class="empty-icon">📄</div>
+      <h2>Carica il tuo piano alimentare</h2>
+      <p class="muted">Leggo il PDF del nutrizionista e preparo un menu dettagliato per le prossime 2 settimane.</p>
+      <a class="btn primary" href="#/profile">Carica il PDF</a>
+    </div>`;
+}
+
+const mealIcon = { colazione: '☕', spuntino: '🍎', pranzo: '🥗', merenda: '🥜', cena: '🍽️' };
+
+function mealCard(m, day) {
+  const outOpts = ['pranzo', 'cena'].includes(m.slot)
+    ? `<div class="seg" role="group" aria-label="Dove mangi a ${m.label.toLowerCase()}">${Object.entries(OUT_LABEL).map(([k, v]) =>
+        `<button data-out="${m.slot}" data-kind="${k}" aria-pressed="${(m.out || 'casa') === k}">${v}</button>`).join('')}</div>`
+    : '';
+  const outBlock = m.out ? `
+    <div class="out-note">
+      <strong>${m.out === 'lavoro' ? `💼 ${esc(m.label)} al lavoro` : '🍴 Al ristorante'}</strong>
+      <p>${m.out === 'lavoro' ? 'Meglio portare da casa il pasto qui sotto. Se mangi in mensa/bar scegli una di queste opzioni:' : 'Scegli una di queste opzioni:'}</p>
+      ${day.eatingOut.map((o) => `<details><summary>${esc(o.name)}</summary><ul>${o.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></details>`).join('')}
+    </div>` : '';
+  return `
+    <article class="meal card slot-${m.slot} ${m.free ? 'free' : ''} ${m.out ? 'is-out' : ''}">
+      <header>
+        <span class="slot-badge">${mealIcon[m.slot]} ${esc(m.label)}</span>
+        ${m.free ? '' : `<button class="icon-btn" data-edit="${m.slot}" aria-label="Modifica ${esc(m.label)}">✎</button>`}
+      </header>
+      <h3>${esc(m.title)}</h3>
+      ${m.free ? '<p class="muted">Qualsiasi alimento, con buonsenso sulle quantità. 🎉</p>' : ''}
+      ${m.items.length ? `<ul class="items">${m.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`
+        : !m.free && m.planOptions.length ? `<ul class="items opts">${m.planOptions.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+      ${outBlock}
+      ${outOpts}
+      ${m.items.length && m.planOptions.length && !m.free ? `<details class="plan-opts"><summary>Alternative dal piano</summary><ul>${m.planOptions.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></details>` : ''}
+    </article>`;
+}
+
+function renderDay(day) {
+  const missing = day.meals.some((m) => !m.generated && !m.free);
+  $app.innerHTML = `
+    <header class="page-head day-head">
+      <a class="nav-arrow" href="#/day/${addDays(day.date, -1)}" aria-label="Giorno precedente">‹</a>
+      <div>
+        <p class="eyebrow">${fmtDate(day.date, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+        <h1>${dayName(day.date)}</h1>
+      </div>
+      <a class="nav-arrow" href="#/day/${addDays(day.date, 1)}" aria-label="Giorno successivo">›</a>
+    </header>
+    ${day.date !== today() ? '<a class="pill-link" href="#/">Torna a oggi</a>' : ''}
+
+    <div class="toggles">
+      <button class="chip ${day.sport ? 'on' : ''}" id="sport" aria-pressed="${day.sport}">🏃 ${day.sport ? 'Giorno di sport' : 'Fai sport oggi?'}</button>
+    </div>
+
+    ${missing ? '<p class="hint">Menu non ancora generato per questo giorno: vedi le opzioni del piano. Puoi generarlo da <a href="#/menu">Menu</a>.</p>' : ''}
+
+    <section class="meals">
+      ${day.meals.map((m) => mealCard(m, day)).join('')}
+      ${day.sport && day.workoutSnack.length ? `
+        <article class="meal card workout">
+          <header><span class="slot-badge">⚡ Pre/post allenamento</span></header>
+          <h3>Spuntino sport</h3>
+          <ul class="items opts">${day.workoutSnack.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+        </article>` : ''}
+    </section>
+
+    ${day.tips.length ? `
+      <section class="tips">
+        <h2>Consigli del giorno</h2>
+        ${day.tips.map((t) => `<p class="tip">${esc(t)}</p>`).join('')}
+      </section>` : ''}
+
+    <section class="card note">
+      <label for="note">Note del giorno</label>
+      <textarea id="note" rows="2" placeholder="Es. cena da amici, poca fame, allenamento spostato…">${esc(day.note)}</textarea>
+    </section>`;
+
+  const saveEvents = async (patch) => {
+    const outNow = Object.fromEntries(day.meals.filter((m) => ['pranzo', 'cena'].includes(m.slot)).map((m) => [m.slot, m.out || 'casa']));
+    const body = { sport: day.sport, out: outNow, note: day.note, ...patch };
+    try { renderDay(await api(`/day/${day.date}/events`, { method: 'PUT', body })); } catch (e) { toast(e.message, 'error'); }
+  };
+  document.getElementById('sport').onclick = () => saveEvents({ sport: !day.sport });
+  $app.querySelectorAll('[data-out]').forEach((b) => b.onclick = () => {
+    const out = Object.fromEntries(day.meals.filter((m) => ['pranzo', 'cena'].includes(m.slot)).map((m) => [m.slot, m.out || 'casa']));
+    saveEvents({ out: { ...out, [b.dataset.out]: b.dataset.kind } });
+  });
+  const note = document.getElementById('note');
+  note.onchange = () => { day.note = note.value; saveEvents({ note: note.value }).then(() => toast('Nota salvata', 'ok')); };
+  $app.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => editMeal(day, day.meals.find((m) => m.slot === b.dataset.edit)));
+}
+
+function editMeal(day, m) {
+  $sheet.innerHTML = `
+    <form method="dialog" class="stack" id="ef">
+      <h2>Modifica ${esc(m.label.toLowerCase())}</h2>
+      <label>Piatto<input name="title" value="${esc(m.generated ? m.title : '')}" placeholder="Es. Pasta al pomodoro" required></label>
+      <label>Ingredienti <span class="muted">(uno per riga)</span><textarea name="items" rows="6">${esc(m.items.join('\n'))}</textarea></label>
+      ${m.planOptions.length ? `<details><summary>Cosa prevede il piano</summary><ul>${m.planOptions.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></details>` : ''}
+      <div class="row">
+        <button class="btn" value="cancel" formnovalidate>Annulla</button>
+        <button class="btn primary" value="save">Salva</button>
+      </div>
+    </form>`;
+  $sheet.showModal();
+  $sheet.onclose = async () => {
+    if ($sheet.returnValue !== 'save') return;
+    const f = new FormData(document.getElementById('ef'));
+    try {
+      await api(`/menu/${m.sourceDate}/${m.slot}`, { method: 'PUT', body: { title: f.get('title'), items: f.get('items').split('\n') } });
+      renderDay(await api(`/day/${day.date}`));
+      toast('Pasto aggiornato', 'ok');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+}
+
+// ---------- menu (2 weeks)
+async function menuPage() {
+  if (!me.plan) return noPlan();
+  loading();
+  const from = today();
+  const days = await api(`/week?from=${from}`);
+  const next = me.lastMenuDate && me.lastMenuDate >= from ? addDays(me.lastMenuDate, 1) : from;
+  const running = me.job?.status === 'running';
+  $app.innerHTML = `
+    <header class="page-head"><p class="eyebrow">Prossimi 14 giorni</p><h1>Menu</h1></header>
+    <div class="row wrap">
+      <button class="btn primary" id="gen" ${running ? 'disabled' : ''}>Genera 2 settimane dal ${fmtDate(next, { day: 'numeric', month: 'short' })}</button>
+      <button class="btn" id="regen" ${running ? 'disabled' : ''}>Rigenera da oggi</button>
+    </div>
+    <section class="week">
+      ${days.map((d) => `
+        <a class="day-row card ${d.date === from ? 'is-today' : ''}" href="#/day/${d.date}">
+          <div class="date-col"><span>${WD_SHORT[d.weekday]}</span><strong>${new Date(`${d.date}T12:00:00`).getDate()}</strong></div>
+          <div class="meals-col">
+            ${d.meals.filter((m) => ['pranzo', 'cena'].includes(m.slot)).map((m) => `
+              <p><span class="dot slot-${m.slot}"></span><span class="muted">${esc(m.label)}</span> ${m.generated || m.free ? esc(m.title) : '<em class="muted">da definire</em>'}</p>`).join('')}
+            <div class="badges">
+              ${d.sport ? '<span class="badge sport">Sport</span>' : ''}
+              ${d.meals.some((m) => m.free) ? '<span class="badge free">Pasto libero</span>' : ''}
+              ${d.meals.filter((m) => m.out).map((m) => `<span class="badge out">${esc(m.label)} · ${OUT_LABEL[m.out]}</span>`).join('')}
+            </div>
+          </div>
+        </a>`).join('')}
+    </section>`;
+  const gen = async (from) => {
+    try { await api('/menu/generate', { method: 'POST', body: { from } }); me = await api('/me'); watchJob(me.job); menuPage(); } catch (e) { toast(e.message, 'error'); }
+  };
+  document.getElementById('gen').onclick = () => gen(next);
+  document.getElementById('regen').onclick = () => confirm('Rigenero il menu da oggi? Le modifiche manuali dei prossimi giorni verranno sostituite.') && gen(from);
+}
+
+// ---------- ask
+const SUGGESTIONS = ['Posso sostituire il pesce di oggi con della carne?', 'L\'orata è un pesce magro o semigrasso?', 'Cosa ordino in pizzeria se non è il pasto libero?', 'Quanto pesa una porzione di frutta secca?'];
+async function askPage() {
+  if (!me.plan) return noPlan();
+  const render = () => {
+    $app.innerHTML = `
+      <header class="page-head"><p class="eyebrow">Dubbi sul piano</p><h1>Chiedi</h1></header>
+      <section class="chat" id="chat">
+        ${chat.length ? chat.map((m) => `<div class="bubble ${m.role}">${esc(m.text)}</div>`).join('')
+          : `<p class="muted">Fai una domanda sul tuo piano: sostituzioni, porzioni, cosa mangiare fuori…</p>
+             <div class="suggest">${SUGGESTIONS.map((s) => `<button class="chip" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>`}
+      </section>
+      <form id="af" class="ask-bar">
+        <input name="q" placeholder="Scrivi una domanda…" autocomplete="off" required maxlength="1000">
+        <button class="btn primary" aria-label="Invia">↑</button>
+      </form>`;
+    const send = async (question) => {
+      chat.push({ role: 'user', text: question }, { role: 'bot pending', text: 'Ci penso…' });
+      render();
+      try {
+        const { answer } = await api('/ask', { method: 'POST', body: { question, date: today() } });
+        chat.splice(-1, 1, { role: 'bot', text: answer });
+      } catch (e) { chat.splice(-1, 1, { role: 'bot error', text: e.message }); }
+      render();
+    };
+    document.getElementById('af').onsubmit = (e) => { e.preventDefault(); send(e.target.q.value.trim()); };
+    $app.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => send(b.dataset.q));
+    document.getElementById('chat').lastElementChild?.scrollIntoView({ block: 'end' });
+  };
+  render();
+}
+
+// ---------- profile
+async function profilePage() {
+  loading();
+  const [weights, plan] = await Promise.all([api('/weights'), me.plan ? api('/plan') : null]);
+  const s = me.settings;
+  const fm = s.free_meal || (plan?.free_meal?.weekday ? plan.free_meal : { weekday: 0, slot: 'cena' });
+  const dayChips = (name, sel = []) => `<div class="daypick">${[1, 2, 3, 4, 5, 6, 7].map((d) =>
+    `<label><input type="checkbox" name="${name}" value="${d}" ${sel.includes(d) ? 'checked' : ''}><span>${WD_SHORT[d]}</span></label>`).join('')}</div>`;
+  $app.innerHTML = `
+    <header class="page-head"><p class="eyebrow">@${esc(me.user.username)}</p><h1>${esc(me.user.name)}</h1></header>
+
+    <section class="card stack">
+      <h2>Piano alimentare</h2>
+      ${me.plan ? `<p><strong>${esc(plan?.title || me.plan.filename)}</strong><br><span class="muted">${esc(plan?.author || '')} · caricato il ${fmtDate(me.plan.created_at.slice(0, 10))}</span></p>` : '<p class="muted">Nessun piano caricato.</p>'}
+      <label class="btn ${me.plan ? '' : 'primary'} file-btn">${me.plan ? 'Carica un nuovo piano (PDF)' : 'Carica il piano (PDF)'}<input type="file" id="pdf" accept="application/pdf" hidden></label>
+      ${plan ? `<details><summary>Cosa ho letto dal piano</summary>${planSummary(plan)}</details>` : ''}
+    </section>
+
+    <form class="card stack" id="sf">
+      <h2>La mia settimana</h2>
+      <fieldset><legend>Pasto libero</legend>
+        <div class="row">
+          <select name="fm_wd" aria-label="Giorno pasto libero"><option value="0">Come da piano</option>${[1, 2, 3, 4, 5, 6, 7].map((d) => `<option value="${d}" ${s.free_meal?.weekday === d ? 'selected' : ''}>${WD[d]}</option>`).join('')}</select>
+          <select name="fm_slot" aria-label="Pasto">${['pranzo', 'cena'].map((x) => `<option ${fm.slot === x ? 'selected' : ''} value="${x}">${SLOT_LABEL[x]}</option>`).join('')}</select>
+        </div>
+        <p class="hint">Resta fisso finché non lo cambi. Se sposti il giorno, il menu di quel giorno viene scambiato con quello previsto dal piano.</p>
+      </fieldset>
+      <fieldset><legend>Giorni di sport</legend>${dayChips('sport', s.sport_days)}
+        <p class="hint">In questi giorni compare lo spuntino pre/post allenamento. Puoi cambiare il singolo giorno dalla home.</p></fieldset>
+      <fieldset><legend>Pranzo al lavoro</legend>${dayChips('work', s.work_lunch_days)}</fieldset>
+      <button class="btn primary">Salva</button>
+    </form>
+
+    <section class="card stack">
+      <h2>Peso</h2>
+      <p class="hint">Una volta a settimana, al mattino, a digiuno. Non il giorno dopo il pasto libero.</p>
+      <form id="wf" class="row">
+        <input type="date" name="date" value="${today()}" aria-label="Data" required>
+        <input type="number" name="kg" step="0.1" min="20" max="400" placeholder="kg" inputmode="decimal" aria-label="Peso in kg" required>
+        <button class="btn primary">Aggiungi</button>
+      </form>
+      ${weightChart(weights)}
+      <ul class="weights">${weights.slice(0, 8).map((w) => `<li><span>${fmtDate(w.date, { day: 'numeric', month: 'short', year: 'numeric' })}</span><strong>${w.kg} kg</strong><button class="icon-btn" data-del="${w.date}" aria-label="Elimina">×</button></li>`).join('')}</ul>
+    </section>
+
+    <button class="btn ghost" id="logout">Esci</button>`;
+
+  document.getElementById('pdf').onchange = (e) => uploadPlan(e.target.files[0]);
+  document.getElementById('sf').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const body = {
+      sport_days: f.getAll('sport').map(Number),
+      work_lunch_days: f.getAll('work').map(Number),
+      free_meal: Number(f.get('fm_wd')) ? { weekday: Number(f.get('fm_wd')), slot: f.get('fm_slot') } : null,
+    };
+    try { me.settings = await api('/settings', { method: 'PUT', body }); toast('Impostazioni salvate', 'ok'); } catch (err) { toast(err.message, 'error'); }
+  };
+  document.getElementById('wf').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api('/weights', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); profilePage(); } catch (err) { toast(err.message, 'error'); }
+  };
+  $app.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { await api(`/weights/${b.dataset.del}`, { method: 'DELETE' }); profilePage(); });
+  document.getElementById('logout').onclick = async () => { await api('/logout', { method: 'POST' }); me = null; location.hash = '#/login'; };
+}
+
+function planSummary(p) {
+  const list = (arr) => `<ul>${arr.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  return `
+    <p class="muted">${p.days.length} giorni, ${p.shared_meals.length} pasti comuni${p.free_meal?.weekday ? `, pasto libero: ${WD[p.free_meal.weekday]} ${p.free_meal.slot}` : ''}.</p>
+    ${p.glossary.length ? `<h3>Glossario</h3><dl>${p.glossary.map((g) => `<dt>${esc(g.term)}</dt><dd>${esc(g.definition)}</dd>`).join('')}</dl>` : ''}
+    ${p.tips.length ? `<h3>Consigli</h3>${list(p.tips)}` : ''}`;
+}
+
+function weightChart(ws) {
+  if (ws.length < 2) return '';
+  const pts = [...ws].reverse().slice(-20);
+  const min = Math.min(...pts.map((p) => p.kg)) - 0.5, max = Math.max(...pts.map((p) => p.kg)) + 0.5;
+  const W = 300, H = 80;
+  const xy = pts.map((p, i) => [(i / (pts.length - 1)) * W, H - ((p.kg - min) / (max - min)) * H]);
+  const delta = (pts.at(-1).kg - pts[0].kg).toFixed(1);
+  return `
+    <figure class="chart">
+      <svg viewBox="-4 -6 ${W + 8} ${H + 12}" role="img" aria-label="Andamento del peso: ${delta > 0 ? '+' : ''}${delta} kg">
+        <polyline points="${xy.map((p) => p.join(',')).join(' ')}" />
+        ${xy.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3"/>`).join('')}
+      </svg>
+      <figcaption>${delta > 0 ? '+' : ''}${delta} kg dal ${fmtDate(pts[0].date, { day: 'numeric', month: 'short' })}</figcaption>
+    </figure>`;
+}
+
+async function uploadPlan(file) {
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) return toast('PDF troppo grande (max 10 MB)', 'error');
+  if (me.plan && !confirm('Caricando un nuovo piano il menu da oggi in poi verrà rigenerato. Continuo?')) return;
+  const data = await new Promise((ok, ko) => {
+    const r = new FileReader();
+    r.onload = () => ok(r.result.split(',')[1]);
+    r.onerror = ko;
+    r.readAsDataURL(file);
+  });
+  try {
+    await api('/plan', { method: 'POST', body: { filename: file.name, data, start: today() } });
+    me = await api('/me');
+    watchJob(me.job);
+    toast('Piano ricevuto, lo sto analizzando', 'ok');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+route();
