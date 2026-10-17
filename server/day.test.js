@@ -64,6 +64,18 @@ test('work lunch default and per-day override', () => {
   assert.equal(meal(day(FRI, { work_lunch_days: [5] }, { out: { pranzo: 'casa' } }), 'pranzo').out, null);
 });
 
+test('favorites: lunch only on the same plan day, breakfast on any day, liked flag', () => {
+  const favorites = [
+    { id: 1, slot: 'pranzo', weekday: 5, title: 'uova e verdure', items: [] },
+    { id: 2, slot: 'pranzo', weekday: 1, title: 'Pasta e fagioli', items: [] },
+    { id: 3, slot: 'colazione', weekday: 3, title: 'Porridge', items: [] },
+  ];
+  const d = composeDay({ date: FRI, plan, settings: {}, events: {}, menuFor: (x) => menu[x] || null, favorites });
+  assert.deepEqual(meal(d, 'pranzo').favorites.map((f) => f.id), [1]);
+  assert.equal(meal(d, 'pranzo').liked, true);
+  assert.deepEqual(meal(d, 'colazione').favorites.map((f) => f.id), [3]);
+});
+
 test('missing menu falls back to plan options, shared meals for breakfast', () => {
   const d = day('2026-10-19');
   assert.equal(meal(d, 'pranzo').generated, false);

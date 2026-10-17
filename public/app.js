@@ -149,7 +149,10 @@ function mealCard(m, day) {
     <article class="meal card slot-${m.slot} ${m.free ? 'free' : ''} ${m.out ? 'is-out' : ''}">
       <header>
         <span class="slot-badge">${mealIcon[m.slot]} ${esc(m.label)}</span>
-        ${m.free ? '' : `<button class="icon-btn" data-edit="${m.slot}" aria-label="Modifica ${esc(m.label)}">✎</button>`}
+        ${m.free ? '' : `<span>
+          ${m.generated ? `<button class="icon-btn like ${m.liked ? 'on' : ''}" data-like="${m.slot}" aria-pressed="${m.liked}" aria-label="${m.liked ? 'Togli dai preferiti' : 'Mi piace'}">${m.liked ? '♥' : '♡'}</button>` : ''}
+          <button class="icon-btn" data-edit="${m.slot}" aria-label="Modifica ${esc(m.label)}">✎</button>
+        </span>`}
       </header>
       <h3>${esc(m.title)}</h3>
       ${m.free ? '<p class="muted">Qualsiasi alimento, con buonsenso sulle quantità. 🎉</p>' : ''}
@@ -214,26 +217,46 @@ function renderDay(day) {
   const note = document.getElementById('note');
   note.onchange = () => { day.note = note.value; saveEvents({ note: note.value }).then(() => toast('Nota salvata', 'ok')); };
   $app.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => editMeal(day, day.meals.find((m) => m.slot === b.dataset.edit)));
+  $app.querySelectorAll('[data-like]').forEach((b) => b.onclick = () => toggleLike(day, day.meals.find((m) => m.slot === b.dataset.like)));
+}
+
+async function toggleLike(day, m) {
+  try {
+    const fav = m.favorites.find((f) => f.title.toLowerCase() === m.title.toLowerCase());
+    if (m.liked && fav) await api(`/favorites/${fav.id}`, { method: 'DELETE' });
+    else await api('/favorites', { method: 'POST', body: { date: m.sourceDate, slot: m.slot, title: m.title, items: m.items } });
+    renderDay(await api(`/day/${day.date}`));
+    toast(m.liked ? 'Tolto dai preferiti' : 'Salvato tra i preferiti: lo riproporrò nei prossimi menu', 'ok');
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 function editMeal(day, m) {
   $sheet.innerHTML = `
     <form method="dialog" class="stack" id="ef">
       <h2>Modifica ${esc(m.label.toLowerCase())}</h2>
+      ${m.favorites.length ? `<div class="fav-pick"><span class="eyebrow">I tuoi preferiti</span><div>${m.favorites.map((f, i) =>
+        `<button type="button" class="chip" data-fav="${i}">♥ ${esc(f.title)}</button>`).join('')}</div></div>` : ''}
       <label>Piatto<input name="title" value="${esc(m.generated ? m.title : '')}" placeholder="Es. Pasta al pomodoro" required></label>
       <label>Ingredienti <span class="muted">(uno per riga)</span><textarea name="items" rows="6">${esc(m.items.join('\n'))}</textarea></label>
       ${m.planOptions.length ? `<details><summary>Cosa prevede il piano</summary><ul>${m.planOptions.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></details>` : ''}
+      <label class="check"><input type="checkbox" name="favorite" checked> Salva tra i preferiti e riproponilo nei prossimi menu</label>
       <div class="row">
         <button class="btn" value="cancel" formnovalidate>Annulla</button>
         <button class="btn primary" value="save">Salva</button>
       </div>
     </form>`;
   $sheet.showModal();
+  const form = document.getElementById('ef');
+  form.querySelectorAll('[data-fav]').forEach((b) => b.onclick = () => {
+    const fav = m.favorites[b.dataset.fav];
+    form.elements.title.value = fav.title;
+    form.elements.items.value = fav.items.join('\n');
+  });
   $sheet.onclose = async () => {
     if ($sheet.returnValue !== 'save') return;
-    const f = new FormData(document.getElementById('ef'));
+    const f = new FormData(form);
     try {
-      await api(`/menu/${m.sourceDate}/${m.slot}`, { method: 'PUT', body: { title: f.get('title'), items: f.get('items').split('\n') } });
+      await api(`/menu/${m.sourceDate}/${m.slot}`, { method: 'PUT', body: { title: f.get('title'), items: f.get('items').split('\n'), favorite: f.has('favorite') } });
       renderDay(await api(`/day/${day.date}`));
       toast('Pasto aggiornato', 'ok');
     } catch (e) { toast(e.message, 'error'); }
@@ -311,7 +334,7 @@ async function askPage() {
 // ---------- profile
 async function profilePage() {
   loading();
-  const [weights, plan] = await Promise.all([api('/weights'), me.plan ? api('/plan') : null]);
+  const [weights, plan, favorites] = await Promise.all([api('/weights'), me.plan ? api('/plan') : null, api('/favorites')]);
   const s = me.settings;
   const fm = s.free_meal || (plan?.free_meal?.weekday ? plan.free_meal : { weekday: 0, slot: 'cena' });
   const dayChips = (name, sel = []) => `<div class="daypick">${[1, 2, 3, 4, 5, 6, 7].map((d) =>
@@ -342,6 +365,16 @@ async function profilePage() {
     </form>
 
     <section class="card stack">
+      <h2>Preferiti</h2>
+      ${favorites.length ? `<ul class="favs">${favorites.map((f) => `
+        <li>
+          <div><strong>${esc(f.title)}</strong><span class="muted">${SLOT_LABEL[f.slot]} · ${['colazione', 'merenda', 'spuntino'].includes(f.slot) ? 'qualsiasi giorno' : WD[f.weekday]}${f.uses > 1 ? ` · scelto ${f.uses} volte` : ''}</span></div>
+          <button class="icon-btn" data-unfav="${f.id}" aria-label="Rimuovi ${esc(f.title)} dai preferiti">×</button>
+        </li>`).join('')}</ul>`
+        : '<p class="hint">Tocca ♡ su un pasto, oppure modificalo: lo salvo qui e lo ripropongo nei prossimi menu.</p>'}
+    </section>
+
+    <section class="card stack">
       <h2>Peso</h2>
       <p class="hint">Una volta a settimana, al mattino, a digiuno. Non il giorno dopo il pasto libero.</p>
       <form id="wf" class="row">
@@ -370,6 +403,7 @@ async function profilePage() {
     e.preventDefault();
     try { await api('/weights', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); profilePage(); } catch (err) { toast(err.message, 'error'); }
   };
+  $app.querySelectorAll('[data-unfav]').forEach((b) => b.onclick = async () => { await api(`/favorites/${b.dataset.unfav}`, { method: 'DELETE' }); profilePage(); });
   $app.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { await api(`/weights/${b.dataset.del}`, { method: 'DELETE' }); profilePage(); });
   document.getElementById('logout').onclick = async () => { await api('/logout', { method: 'POST' }); me = null; location.hash = '#/login'; };
 }

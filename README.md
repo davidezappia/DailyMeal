@@ -37,6 +37,7 @@ mercoledì si pranza in ufficio e che il pasto libero quest'anno è il venerdì.
 |---|---|
 | 📄 **Lettura del PDF** | Il piano viene trasformato in dati strutturati: giorni, pasti, alternative, facoltativi, regole, glossario, consigli. |
 | 🍽️ **Menu di 2 settimane** | Piatti concreti con grammature, frutta e verdura di stagione, alternative variate. Ogni pasto è **modificabile** e mostra le opzioni del piano. |
+| ♥ **Preferiti** | I pasti che modifichi o a cui metti "mi piace" vengono salvati, proposti come scorciatoia quando modifichi e riproposti dai menu generati in seguito (stesso pasto, stesso giorno del piano). |
 | ☀️ **Oggi** | Pasti del giorno + consigli contestuali (sport, pasti fuori, pasto libero) e consigli del piano a rotazione. |
 | 🏃 **Sport** | Giorni fissi o singolo giorno: compare lo spuntino pre/post allenamento. |
 | 💼 **Pasti fuori** | Per pranzo e cena: Casa / Lavoro / Ristorante, con le indicazioni del piano per mangiare fuori. Pranzo al lavoro ricorrente. |

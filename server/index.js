@@ -1,7 +1,7 @@
 import express from 'express';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { q } from './db.js';
-import { parsePlan, generateMenu, ask, SLOTS, PROVIDER } from './ai.js';
+import { parsePlan, generateMenu, ask, SLOTS, PROVIDER, isoWeekday } from './ai.js';
 import { composeDay, addDays } from './day.js';
 
 const app = express();
@@ -17,7 +17,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '15mb' }));
-app.use(express.static('public', { maxAge: '1h' }));
+app.use(express.static('public')); // no max-age: ETag revalidation so updates show up immediately
 
 // ---------- helpers
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s));
@@ -60,7 +60,7 @@ async function fillMenu(uid, from, days) {
   for (let i = 0; i < dates.length; i += 7) weeks.push(dates.slice(i, i + 7));
   // One call per week, in parallel: faster than one long generation.
   await Promise.all(weeks.map(async (w) => {
-    for (const d of await generateMenu(plan, w)) if (w.includes(d.date)) q.saveMenuDay(uid, d.date, d.meals);
+    for (const d of await generateMenu(plan, w, q.favorites(uid))) if (w.includes(d.date)) q.saveMenuDay(uid, d.date, d.meals);
   }));
 }
 
@@ -141,6 +141,22 @@ app.put('/api/menu/:date/:slot', (req, res) => {
   const meal = { slot, title: text(req.body.title, 120) || slot, items, free: false };
   const meals = (q.menuDay(req.user.id, date) || []).filter((m) => m.slot !== slot);
   q.saveMenuDay(req.user.id, date, [...meals, meal]);
+  // A meal the user wrote themselves is one they like: keep it to suggest again.
+  if (req.body.favorite !== false) q.saveFavorite(req.user.id, slot, isoWeekday(date), meal.title, items);
+  res.json({ ok: true });
+});
+
+app.get('/api/favorites', (req, res) => res.json(q.favorites(req.user.id)));
+app.post('/api/favorites', (req, res) => {
+  const { date, slot } = req.body;
+  const title = text(req.body.title, 120);
+  if (!isDate(date) || !SLOTS.includes(slot) || !title) return bad(res, 'Parametri non validi');
+  const items = Array.isArray(req.body.items) ? req.body.items.map((i) => text(i, 200)).filter(Boolean).slice(0, 20) : [];
+  q.saveFavorite(req.user.id, slot, isoWeekday(date), title, items);
+  res.json({ ok: true });
+});
+app.delete('/api/favorites/:id', (req, res) => {
+  q.deleteFavorite(req.user.id, Number(req.params.id));
   res.json({ ok: true });
 });
 
@@ -149,7 +165,7 @@ app.get('/api/job', (req, res) => res.json(jobs.get(req.user.id) || null));
 // ---------- days
 const dayView = (uid, date) => {
   const plan = q.plan(uid);
-  return plan && composeDay({ date, plan, settings: q.settings(uid), events: q.events(uid, date), menuFor: (d) => q.menuDay(uid, d) });
+  return plan && composeDay({ date, plan, settings: q.settings(uid), events: q.events(uid, date), menuFor: (d) => q.menuDay(uid, d), favorites: q.favorites(uid) });
 };
 
 app.get('/api/day/:date', (req, res) => {

@@ -154,9 +154,19 @@ export function cleanPlan(plan) {
   };
 }
 
-/** @param {object} plan @param {string[]} dates YYYY-MM-DD */
-export async function generateMenu(plan, dates) {
+const MAX_FAVORITES_IN_PROMPT = 20;
+
+/**
+ * @param {object} plan @param {string[]} dates YYYY-MM-DD
+ * @param {Array<{slot:string, weekday:number, title:string, items:string[]}>} favorites meals the user liked
+ */
+export async function generateMenu(plan, dates, favorites = []) {
   const days = dates.map((d) => `${d} (weekday ${isoWeekday(d)})`).join('\n');
+  const favs = favorites.slice(0, MAX_FAVORITES_IN_PROMPT)
+    .map((f) => `- ${f.slot}, weekday ${f.weekday}: ${f.title} (${f.items.join(', ')})`).join('\n');
+  const favRule = favs
+    ? `\n\nCombinazioni che piacciono all'utente: riproponine alcune (1-3 a settimana), identiche, solo nello stesso pasto e, per pranzo e cena, nello stesso weekday (colazione e merenda vanno bene in qualsiasi giorno):\n${favs}`
+    : '';
   const { days: out } = await call({
     system: 'Sei un nutrizionista-cuoco. Trasformi un piano alimentare in un menu concreto, vario e realistico per la cucina di casa italiana.',
     content: `Piano (JSON):\n${JSON.stringify(plan)}\n\nCrea il menu per questi giorni:\n${days}
@@ -167,7 +177,7 @@ Regole:
 - Varia le scelte tra i giorni (stessa alternativa al massimo 2 volte a settimana), usa frutta e verdura di stagione per la data.
 - "title" è un piatto concreto (es. "Riso basmati con zucchine e pesto"), "items" la lista pesata degli ingredienti.
 - Pasto libero: free=true, title "Pasto libero", items [].
-- Non aggiungere lo spuntino pre/post allenamento: lo gestisce l'app.`,
+- Non aggiungere lo spuntino pre/post allenamento: lo gestisce l'app.${favRule}`,
     schema: MENU_SCHEMA,
   });
   return out;

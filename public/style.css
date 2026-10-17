@@ -200,6 +200,17 @@ details ul { color: var(--muted); }
 .chart polyline { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
 .chart circle { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
 .chart figcaption { font-size: .85rem; color: var(--muted); text-align: right; }
+.like { font-size: 1.25rem; }
+.like.on { color: #d6455d; }
+.like.on:hover { color: #d6455d; }
+.fav-pick > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.fav-pick .chip { font-size: .85rem; padding: 7px 12px; }
+label.check { flex-direction: row; align-items: center; gap: 10px; font-weight: 500; }
+label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.favs { list-style: none; padding: 0; }
+.favs li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.favs li div { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.favs li .muted { font-size: .82rem; }
 .weights { list-style: none; padding: 0; }
 .weights li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .weights li span { flex: 1; color: var(--muted); }

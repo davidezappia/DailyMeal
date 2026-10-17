@@ -40,6 +40,17 @@ CREATE TABLE IF NOT EXISTS day_events (
   data TEXT NOT NULL,
   PRIMARY KEY (user_id, date)
 );
+CREATE TABLE IF NOT EXISTS favorites (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  slot TEXT NOT NULL,
+  weekday INTEGER NOT NULL,
+  title TEXT NOT NULL COLLATE NOCASE,
+  items TEXT NOT NULL,
+  uses INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (user_id, slot, weekday, title)
+);
 CREATE TABLE IF NOT EXISTS weights (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   date TEXT NOT NULL,
@@ -80,6 +91,16 @@ export const q = {
 
   events: (uid, date) => json(db.prepare('SELECT data FROM day_events WHERE user_id = ? AND date = ?').get(uid, date), 'data') || {},
   saveEvents: (uid, date, data) => db.prepare('INSERT OR REPLACE INTO day_events VALUES (?, ?, ?)').run(uid, date, JSON.stringify(data)),
+
+  favorites: (uid) =>
+    db.prepare('SELECT id, slot, weekday, title, items, uses FROM favorites WHERE user_id = ? ORDER BY uses DESC, updated_at DESC')
+      .all(uid).map((f) => ({ ...f, items: JSON.parse(f.items) })),
+  saveFavorite: (uid, slot, weekday, title, items) =>
+    db.prepare(`INSERT INTO favorites (user_id, slot, weekday, title, items) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (user_id, slot, weekday, title)
+                DO UPDATE SET items = excluded.items, uses = uses + 1, updated_at = datetime('now')`)
+      .run(uid, slot, weekday, title, JSON.stringify(items)),
+  deleteFavorite: (uid, id) => db.prepare('DELETE FROM favorites WHERE user_id = ? AND id = ?').run(uid, id),
 
   weights: (uid) => db.prepare('SELECT date, kg FROM weights WHERE user_id = ? ORDER BY date DESC LIMIT 52').all(uid),
   saveWeight: (uid, date, kg) => db.prepare('INSERT OR REPLACE INTO weights VALUES (?, ?, ?)').run(uid, date, kg),

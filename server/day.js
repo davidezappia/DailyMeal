@@ -16,6 +16,13 @@ function planOptions(plan, wd, slot) {
   return plan.shared_meals.filter((m) => m.slot === slot).flatMap((m) => [`▸ ${m.name}`, ...itemLines(m.items)]);
 }
 
+/** Favorites usable for a slot: same plan day, or any day when the slot uses the shared meals (breakfast, snack). */
+export function favoritesFor(plan, favorites, wd, slot) {
+  const own = plan.days.find((d) => d.weekday === wd)?.meals.find((m) => m.slot === slot);
+  const shared = !own?.items.length;
+  return favorites.filter((f) => f.slot === slot && (shared || f.weekday === wd));
+}
+
 function templateSlots(plan, wd) {
   const own = plan.days.find((d) => d.weekday === wd)?.meals.map((m) => m.slot) || [];
   const shared = plan.shared_meals.map((m) => m.slot);
@@ -33,7 +40,7 @@ export function freeMeal(plan, settings) {
  * Builds the view of one day: menu (with free-meal swap), sport, meals out, tips.
  * @param {{date:string, plan:object, settings:object, events:object, menuFor:(date:string)=>any[]|null}} a
  */
-export function composeDay({ date, plan, settings, events, menuFor }) {
+export function composeDay({ date, plan, settings, events, menuFor, favorites = [] }) {
   const wd = isoWeekday(date);
   const { plan: pf, chosen } = freeMeal(plan, settings);
 
@@ -49,7 +56,10 @@ export function composeDay({ date, plan, settings, events, menuFor }) {
 
   let meals = templateSlots(plan, srcWd).map((slot) => {
     const m = stored?.find((x) => x.slot === slot);
+    const favs = favoritesFor(plan, favorites, srcWd, slot);
     return {
+      favorites: favs,
+      liked: !!m && favs.some((f) => f.title.toLowerCase() === m.title.toLowerCase()),
       slot,
       label: LABEL[slot],
       title: m?.title || LABEL[slot],
