@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { composeDay, addDays } from './day.js';
+import { composeDay, addDays, planChoices, isPlanItem } from './day.js';
 
 const it = (s) => ({ options: [s], optional: false });
 const plan = {
@@ -80,6 +80,15 @@ test('missing menu falls back to plan options, shared meals for breakfast', () =
   const d = day('2026-10-19');
   assert.equal(meal(d, 'pranzo').generated, false);
   assert.deepEqual(meal(d, 'colazione').planOptions, ['▸ Colazione dolce', 'fette biscottate']);
+});
+
+test('isPlanItem accepts plan options with an optional short detail, rejects anything else', () => {
+  const choices = planChoices(plan, 5, 'pranzo');
+  assert.equal(isPlanItem(choices, 'pranzo 5'), true);
+  assert.equal(isPlanItem(choices, 'pranzo 5 · con zucchine'), true);
+  assert.equal(isPlanItem(choices, 'pizza margherita'), false);
+  assert.equal(isPlanItem(choices, `pranzo 5 · ${'x'.repeat(81)}`), false);
+  assert.deepEqual(planChoices(plan, 5, 'colazione').map((g) => g.name), ['Colazione dolce']);
 });
 
 test('slots follow the plan order: an afternoon spuntino stays between lunch and dinner', () => {

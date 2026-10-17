@@ -2,7 +2,7 @@ import express from 'express';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { q } from './db.js';
 import { parsePlan, generateMenu, ask, cleanPlan, SLOTS, PROVIDER, isoWeekday } from './ai.js';
-import { composeDay, addDays } from './day.js';
+import { composeDay, addDays, planChoices, isPlanItem } from './day.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -138,12 +138,26 @@ app.post('/api/menu/generate', (req, res) => {
 app.put('/api/menu/:date/:slot', (req, res) => {
   const { date, slot } = req.params;
   if (!isDate(date) || !SLOTS.includes(slot)) return bad(res, 'Parametri non validi');
-  const items = Array.isArray(req.body.items) ? req.body.items.map((i) => text(i, 200)).filter(Boolean).slice(0, 20) : [];
-  const meal = { slot, title: text(req.body.title, 120) || slot, items, free: false };
+  const plan = loadPlan(req.user.id);
+  if (!plan) return bad(res, 'Carica prima il piano');
+
+  let meal;
+  if (req.body.favoriteId) {
+    // A favorite was already accepted once: reuse it as-is.
+    const fav = q.favorites(req.user.id).find((f) => f.id === Number(req.body.favoriteId) && f.slot === slot);
+    if (!fav) return bad(res, 'Preferito non trovato', 404);
+    meal = { slot, title: fav.title, items: fav.items, free: false };
+  } else {
+    const items = Array.isArray(req.body.items) ? req.body.items.map((i) => text(i, 300)).filter(Boolean).slice(0, 20) : [];
+    if (!items.length) return bad(res, 'Scegli almeno un alimento');
+    const choices = planChoices(plan, isoWeekday(date), slot);
+    if (!items.every((i) => isPlanItem(choices, i))) return bad(res, 'Alcuni alimenti non sono previsti dal piano');
+    meal = { slot, title: text(req.body.title, 120) || slot, items, free: false };
+  }
   const meals = (q.menuDay(req.user.id, date) || []).filter((m) => m.slot !== slot);
   q.saveMenuDay(req.user.id, date, [...meals, meal]);
-  // A meal the user wrote themselves is one they like: keep it to suggest again.
-  if (req.body.favorite !== false) q.saveFavorite(req.user.id, slot, isoWeekday(date), meal.title, items);
+  // A meal the user composed themselves is one they like: keep it to suggest again.
+  if (req.body.favorite !== false) q.saveFavorite(req.user.id, slot, isoWeekday(date), meal.title, meal.items);
   res.json({ ok: true });
 });
 

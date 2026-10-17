@@ -216,6 +216,12 @@ details ul { color: var(--muted); }
 .like.on:hover { color: #d6455d; }
 .fav-pick > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .fav-pick .chip { font-size: .85rem; padding: 7px 12px; }
+.picks { display: flex; flex-direction: column; gap: 10px; }
+.pick { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.pick select { background: var(--surface); text-overflow: ellipsis; }
+.pick input { background: transparent; border: 0; border-bottom: 1px dashed var(--line); border-radius: 0; padding: 6px 4px; font-size: .9rem; }
+.pick .fixed { margin: 0; padding: 10px 4px 2px; font-weight: 500; }
+dialog .seg { margin-top: 0; }
 label.check { flex-direction: row; align-items: center; gap: 10px; font-weight: 500; }
 label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .favs { list-style: none; padding: 0; }

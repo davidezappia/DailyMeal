@@ -259,36 +259,79 @@ async function toggleLike(day, m) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+const DETAIL_SEP = ' · ';
+const words = (s) => new Set(s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, ' ').split(' ').filter((w) => w.length > 3));
+const overlap = (a, b) => { const B = words(b); return [...words(a)].filter((w) => B.has(w)).length; };
+
+/** Best guess of which plan option each current menu item corresponds to, so the sheet opens on what's on the plate. */
+function preselect(items, current) {
+  return items.map((it) => {
+    for (const c of current) {
+      const o = it.options.find((opt) => c === opt || c.startsWith(opt + DETAIL_SEP));
+      if (o) return { value: o, detail: c.slice(o.length + DETAIL_SEP.length), score: 10 };
+    }
+    const scored = it.options.map((o) => ({ o, s: Math.max(0, ...current.map((c) => overlap(o, c))) })).sort((a, b) => b.s - a.s);
+    return { value: scored[0].s > 0 ? scored[0].o : it.optional ? '' : it.options[0], detail: '', score: scored[0].s };
+  });
+}
+
+function pickRows(items, picks) {
+  return items.map((it, k) => {
+    const p = picks[k];
+    const field = it.options.length === 1 && !it.optional
+      ? `<p class="fixed">${esc(it.options[0])}</p><input type="hidden" name="opt${k}" value="${esc(it.options[0])}">`
+      : `<select name="opt${k}" aria-label="Alimento ${k + 1}">${it.optional ? `<option value="" ${p.value ? '' : 'selected'}>— Facoltativo: non lo prendo —</option>` : ''}${
+        it.options.map((o) => `<option ${o === p.value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    return `<div class="pick">${field}<input name="det${k}" value="${esc(p.detail)}" maxlength="80" placeholder="Dettaglio facoltativo, es. riso basmati" aria-label="Dettaglio alimento ${k + 1}"></div>`;
+  }).join('');
+}
+
 function editMeal(day, m) {
+  const groups = m.choices;
+  if (!groups.length) return toast('Il piano non prevede alternative per questo pasto', 'error');
+  const guesses = groups.map((g) => preselect(g.items, m.items));
+  const scores = guesses.map((p) => p.reduce((sum, x) => sum + x.score, 0));
+  let gi = scores.indexOf(Math.max(...scores));
   $sheet.innerHTML = `
     <form method="dialog" class="stack" id="ef">
       <h2>Modifica ${esc(m.label.toLowerCase())}</h2>
-      ${m.favorites.length ? `<div class="fav-pick"><span class="eyebrow">I tuoi preferiti</span><div>${m.favorites.map((f, i) =>
-        `<button type="button" class="chip" data-fav="${i}">♥ ${esc(f.title)}</button>`).join('')}</div></div>` : ''}
-      <label>Piatto<input name="title" value="${esc(m.generated ? m.title : '')}" placeholder="Es. Pasta al pomodoro" required></label>
-      <label>Ingredienti <span class="muted">(uno per riga)</span><textarea name="items" rows="6">${esc(m.items.join('\n'))}</textarea></label>
-      ${m.planOptions.length ? `<details><summary>Cosa prevede il piano</summary>${planList(m.planOptions)}</details>` : ''}
+      ${m.favorites.length ? `<div class="fav-pick"><span class="eyebrow">I tuoi preferiti · un tocco per sceglierlo</span><div>${m.favorites.map((f) =>
+        `<button type="button" class="chip" data-fav="${f.id}">♥ ${esc(f.title)}</button>`).join('')}</div></div>` : ''}
+      ${groups.length > 1 ? `<div class="seg" role="group" aria-label="Tipo di ${esc(m.label.toLowerCase())}">${groups.map((g, i) =>
+        `<button type="button" data-group="${i}" aria-pressed="${i === gi}">${esc(g.name)}</button>`).join('')}</div>` : ''}
+      <div class="picks" id="picks"></div>
+      <label>Nome del piatto <span class="muted">(facoltativo)</span><input name="title" value="${esc(m.generated ? m.title : '')}" placeholder="Es. Riso con zucchine e pesto" maxlength="120"></label>
       <label class="check"><input type="checkbox" name="favorite" checked> Salva tra i preferiti e riproponilo nei prossimi menu</label>
       <div class="row">
         <button class="btn" value="cancel" formnovalidate>Annulla</button>
         <button class="btn primary" value="save">Salva</button>
       </div>
     </form>`;
-  $sheet.showModal();
   const form = document.getElementById('ef');
-  form.querySelectorAll('[data-fav]').forEach((b) => b.onclick = () => {
-    const fav = m.favorites[b.dataset.fav];
-    form.elements.title.value = fav.title;
-    form.elements.items.value = fav.items.join('\n');
-  });
-  $sheet.onclose = async () => {
-    if ($sheet.returnValue !== 'save') return;
-    const f = new FormData(form);
+  const showGroup = () => {
+    form.querySelector('#picks').innerHTML = pickRows(groups[gi].items, guesses[gi]);
+    form.querySelectorAll('[data-group]').forEach((b) => b.setAttribute('aria-pressed', Number(b.dataset.group) === gi));
+  };
+  form.querySelectorAll('[data-group]').forEach((b) => b.onclick = () => { gi = Number(b.dataset.group); showGroup(); });
+  showGroup();
+  $sheet.showModal();
+
+  const save = async (body) => {
     try {
-      await api(`/menu/${m.sourceDate}/${m.slot}`, { method: 'PUT', body: { title: f.get('title'), items: f.get('items').split('\n'), favorite: f.has('favorite') } });
+      await api(`/menu/${m.sourceDate}/${m.slot}`, { method: 'PUT', body });
       renderDay(await api(`/day/${day.date}`));
       toast('Pasto aggiornato', 'ok');
     } catch (e) { toast(e.message, 'error'); }
+  };
+  form.querySelectorAll('[data-fav]').forEach((b) => b.onclick = () => { $sheet.onclose = null; $sheet.close(); save({ favoriteId: Number(b.dataset.fav) }); });
+  $sheet.onclose = () => {
+    if ($sheet.returnValue !== 'save') return;
+    const f = new FormData(form);
+    const items = groups[gi].items.map((_, k) => {
+      const value = f.get(`opt${k}`), detail = String(f.get(`det${k}`) || '').trim();
+      return value && (detail ? value + DETAIL_SEP + detail : value);
+    }).filter(Boolean);
+    save({ title: f.get('title').trim() || m.title, items, favorite: f.has('favorite') });
   };
 }
 

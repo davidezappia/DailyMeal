@@ -16,6 +16,21 @@ function planOptions(plan, wd, slot) {
   return plan.shared_meals.filter((m) => m.slot === slot).flatMap((m) => [`▸ ${m.name}`, ...itemLines(m.items)]);
 }
 
+/** Structured plan items for a slot, as groups to pick from (one group per shared meal, e.g. sweet/savory breakfast). */
+export function planChoices(plan, wd, slot) {
+  const own = plan.days.find((d) => d.weekday === wd)?.meals.find((m) => m.slot === slot);
+  if (own?.items.length) return [{ name: '', items: own.items }];
+  return plan.shared_meals.filter((m) => m.slot === slot).map(({ name, items }) => ({ name, items }));
+}
+
+export const DETAIL_SEP = ' · ';
+
+/** An edited meal item must be one of the plan's options, optionally followed by a short detail ("100g cereali · riso basmati"). */
+export function isPlanItem(choices, item) {
+  const options = choices.flatMap((g) => g.items.flatMap((i) => i.options));
+  return options.some((o) => item === o || (item.startsWith(o + DETAIL_SEP) && item.length - o.length <= 80));
+}
+
 /** Favorites usable for a slot: same plan day, or any day when the slot uses the shared meals (breakfast, snack). */
 export function favoritesFor(plan, favorites, wd, slot) {
   const own = plan.days.find((d) => d.weekday === wd)?.meals.find((m) => m.slot === slot);
@@ -73,6 +88,7 @@ export function composeDay({ date, plan, settings, events, menuFor, favorites = 
       free: false,
       sourceDate: srcDate,
       planOptions: planOptions(plan, srcWd, slot),
+      choices: planChoices(plan, srcWd, slot),
     };
   });
   if (isFreeDay) {
