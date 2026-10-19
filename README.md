@@ -14,6 +14,7 @@ sport, pranzi al lavoro e pasto libero. Self-hosted, leggera, pensata per lo sma
 ![Docker](https://img.shields.io/badge/docker-ready-2496ed?logo=docker&logoColor=white)
 ![AI](https://img.shields.io/badge/AI-Claude%20%7C%20OpenRouter%20%7C%20llama.cpp-d97757)
 ![PWA](https://img.shields.io/badge/PWA-installabile-5a0fc8)
+![License](https://img.shields.io/badge/licenza-MIT-blue)
 
 <br>
 
@@ -165,3 +166,7 @@ npm run dev     # http://localhost:3000
 
 DailyMeal aiuta a *seguire* un piano scritto da un professionista. Non sostituisce il nutrizionista:
 i menu generati dall'AI vanno verificati, e per dubbi di salute chiedi a chi ti segue.
+
+## Licenza
+
+[MIT](LICENSE) © Davide Zappia
