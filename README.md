@@ -12,7 +12,7 @@ sport, pranzi al lavoro e pasto libero. Self-hosted, leggera, pensata per lo sma
 ![Node](https://img.shields.io/badge/node-%E2%89%A522.13-3c873a?logo=node.js&logoColor=white)
 ![SQLite](https://img.shields.io/badge/db-SQLite%20integrato-0f80cc?logo=sqlite&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-ready-2496ed?logo=docker&logoColor=white)
-![AI](https://img.shields.io/badge/AI-Claude%20%7C%20llama.cpp-d97757)
+![AI](https://img.shields.io/badge/AI-Claude%20%7C%20OpenRouter%20%7C%20llama.cpp-d97757)
 ![PWA](https://img.shields.io/badge/PWA-installabile-5a0fc8)
 
 <br>
@@ -100,11 +100,25 @@ llama-server -m modello.gguf --host 0.0.0.0 --port 8080 -c 32768 --jinja
 - Il testo del PDF viene estratto dall'app: i PDF solo-immagine richiedono Claude.
 - Su hardware consumer l'elaborazione richiede decine di minuti; avviene in background.
 
+### OpenRouter (modelli ospitati, anche gratuiti)
+
+```env
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+# OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+```
+
+- Crea la chiave su [openrouter.ai/keys](https://openrouter.ai/keys). I modelli gratuiti hanno il suffisso `:free` e limiti giornalieri di richieste, sufficienti per un uso familiare (un piano + 2 settimane di menu sono 3 richieste).
+- Serve un modello che supporti gli *structured outputs*: l'app chiede a OpenRouter di usare solo provider che rispettano lo schema JSON.
+- **Privacy**: il testo del PDF e il piano vengono inviati a un servizio esterno; i modelli gratuiti possono conservare o usare i dati. Carica PDF senza nome e dati personali. L'app non invia mai nome, autore e date del piano nelle richieste di menu e domande. Alcuni modelli gratuiti richiedono di abilitarne l'uso nelle [impostazioni privacy](https://openrouter.ai/settings/privacy) di OpenRouter.
+
 ## Configurazione
 
 | Variabile | Default | Descrizione |
 |---|---|---|
-| `AI_PROVIDER` | `anthropic` | `anthropic` oppure `llamacpp` |
+| `AI_PROVIDER` | `anthropic` | `anthropic`, `openrouter` oppure `llamacpp` |
+| `OPENROUTER_API_KEY` | | Chiave API OpenRouter |
+| `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Modello OpenRouter |
 | `ANTHROPIC_API_KEY` | | Chiave API Anthropic |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Modello Claude |
 | `LLAMACPP_URL` | `http://localhost:8080` | Indirizzo di `llama-server` |
@@ -130,7 +144,7 @@ Dipendenze runtime: `express`, `@anthropic-ai/sdk`, `unpdf`. Circa 60 MB di RAM.
 ## Sicurezza e privacy
 
 - I dati restano sul tuo server, in un unico file SQLite (volume Docker `dailymeal-data`).
-- Il PDF viene inviato solo al motore AI scelto: Anthropic, oppure il tuo `llama-server` locale.
+- Il PDF viene inviato solo al motore AI scelto: Anthropic, OpenRouter, oppure il tuo `llama-server` locale (in quel caso non esce dalla tua rete).
 - Non esporre la porta direttamente su Internet: usa un reverse proxy HTTPS o una VPN (Tailscale, WireGuard).
 
 Backup:

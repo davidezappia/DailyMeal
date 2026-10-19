@@ -1,10 +1,27 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { extractText, getDocumentProxy } from 'unpdf';
 
-// AI_PROVIDER: "anthropic" (default) or "llamacpp" (llama-server on the LAN, OpenAI-compatible API).
-export const PROVIDER = process.env.AI_PROVIDER === 'llamacpp' ? 'llamacpp' : 'anthropic';
+// AI_PROVIDER: "anthropic" (default), "llamacpp" (llama-server on the LAN) or "openrouter" (hosted models).
+// llamacpp and openrouter share the OpenAI-compatible chat/completions path.
+export const PROVIDER = ['llamacpp', 'openrouter'].includes(process.env.AI_PROVIDER) ? process.env.AI_PROVIDER : 'anthropic';
 const LLAMACPP_URL = (process.env.LLAMACPP_URL || 'http://localhost:8080').replace(/\/$/, '');
 const LLAMACPP_TIMEOUT_MS = Number(process.env.LLAMACPP_TIMEOUT_MIN || 30) * 60_000;
+const OPENAI_COMPAT = {
+  llamacpp: {
+    name: 'LLM locale',
+    url: `${LLAMACPP_URL}/v1/chat/completions`,
+    headers: {},
+    // Reasoning models (Qwen3…) can spend the whole token budget thinking before the JSON: off for structured output.
+    extra: (schema) => (schema ? { chat_template_kwargs: { enable_thinking: false } } : {}),
+  },
+  openrouter: {
+    name: 'OpenRouter',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'X-Title': 'DailyMeal' },
+    // require_parameters: route only to providers that honour response_format (JSON schema).
+    extra: () => ({ model: process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free', provider: { require_parameters: true } }),
+  },
+}[PROVIDER];
 const client = PROVIDER === 'anthropic' ? new Anthropic() : null; // reads ANTHROPIC_API_KEY
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5-5';
 export const SLOTS = ['colazione', 'spuntino', 'pranzo', 'merenda', 'cena'];
@@ -70,7 +87,7 @@ function menuSchema(plan) {
 }
 
 function call(args) {
-  return PROVIDER === 'llamacpp' ? callLlamaCpp(args) : callClaude(args);
+  return PROVIDER === 'anthropic' ? callClaude(args) : callOpenAICompat(args);
 }
 
 async function callClaude({ system, content, schema, maxTokens = 64000, effort = 'medium' }) {
@@ -90,7 +107,7 @@ async function callClaude({ system, content, schema, maxTokens = 64000, effort =
   return schema ? JSON.parse(text) : text;
 }
 
-/** Local models can't read PDFs: turn document blocks into plain text. */
+/** OpenAI-compatible endpoints get the PDF as extracted text, not as a document block. */
 async function toText(content) {
   if (typeof content === 'string') return content;
   const parts = await Promise.all(content.map(async (b) => {
@@ -103,23 +120,24 @@ async function toText(content) {
   return parts.join('\n\n');
 }
 
-// Streams so slow local generations aren't killed by fetch's 5-minute headers timeout.
-async function callLlamaCpp({ system, content, schema, maxTokens = 32000 }) {
-  const res = await fetch(`${LLAMACPP_URL}/v1/chat/completions`, {
+// Streams so slow generations aren't killed by fetch's 5-minute headers timeout.
+async function callOpenAICompat({ system, content, schema, maxTokens = 32000 }) {
+  const api = OPENAI_COMPAT;
+  const res = await fetch(api.url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...api.headers },
     signal: AbortSignal.timeout(LLAMACPP_TIMEOUT_MS),
     body: JSON.stringify({
       messages: [{ role: 'system', content: system }, { role: 'user', content: await toText(content) }],
       max_tokens: maxTokens,
       temperature: schema ? 0.4 : 0.6,
       stream: true,
-      // Reasoning models (Qwen3…) can spend the whole token budget thinking before the JSON: off for structured output.
-      ...(schema && { chat_template_kwargs: { enable_thinking: false } }),
+      ...api.extra(schema),
       ...(schema && { response_format: { type: 'json_schema', json_schema: { name: 'output', strict: true, schema } } }),
     }),
-  }).catch((e) => { throw new Error(`LLM locale non raggiungibile su ${LLAMACPP_URL}: ${e.message}`); });
-  if (!res.ok) throw new Error(`LLM locale: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }).catch((e) => { throw new Error(`${api.name} non raggiungibile: ${e.message}`); });
+  if (res.status === 429) throw new Error(`${api.name}: limite di richieste raggiunto, riprova più tardi`);
+  if (!res.ok) throw new Error(`${api.name}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
 
   let text = '', buf = '', finish = null;
   const decoder = new TextDecoder();
@@ -129,15 +147,17 @@ async function callLlamaCpp({ system, content, schema, maxTokens = 32000 }) {
     buf = lines.pop();
     for (const line of lines) {
       if (!line.startsWith('data:') || line.includes('[DONE]')) continue;
-      const choice = JSON.parse(line.slice(5)).choices?.[0];
+      const event = JSON.parse(line.slice(5));
+      if (event.error) throw new Error(`${api.name}: ${event.error.message || 'errore durante la generazione'}`);
+      const choice = event.choices?.[0];
       text += choice?.delta?.content || '';
       finish = choice?.finish_reason || finish;
     }
   }
-  if (finish === 'length') throw new Error('Risposta del LLM locale troncata: aumenta il contesto (-c) di llama-server');
+  if (finish === 'length') throw new Error(`Risposta di ${api.name} troncata: serve un modello con più contesto`);
   text = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
   if (!schema) return text;
-  try { return JSON.parse(text); } catch { throw new Error('Il LLM locale ha restituito JSON non valido'); }
+  try { return JSON.parse(text); } catch { throw new Error(`${api.name} ha restituito JSON non valido: prova un altro modello`); }
 }
 
 export async function parsePlan(pdfBase64) {
@@ -175,6 +195,9 @@ export function cleanPlan(plan) {
   };
 }
 
+// Names (person, nutritionist) and dates aren't needed to plan meals: keep them out of every prompt.
+const planForPrompt = ({ title, author, valid_from, ...rest }) => JSON.stringify(rest);
+
 const MAX_FAVORITES_IN_PROMPT = 20;
 
 /**
@@ -192,7 +215,7 @@ export async function generateMenu(plan, dates, favorites = [], excluded = []) {
     : '';
   const { days: out } = await call({
     system: 'Sei un nutrizionista-cuoco. Trasformi un piano alimentare in un menu concreto, vario e realistico per la cucina di casa italiana.',
-    content: `Piano (JSON):\n${JSON.stringify(plan)}\n\nCrea il menu per questi giorni:\n${days}
+    content: `Piano (JSON):\n${planForPrompt(plan)}\n\nCrea il menu per questi giorni:\n${days}
 
 Regole:
 - Per ogni giorno usa lo schema del suo weekday; per i pasti che rimandano a shared_meals scegli tra quelli.
@@ -210,7 +233,7 @@ Regole:
 
 export function ask(plan, context, question) {
   return call({
-    system: `Sei l'assistente del piano alimentare dell'utente. Rispondi in italiano, in modo breve e pratico (max ~120 parole), basandoti SOLO sul piano qui sotto e sulla giornata corrente. Se la domanda esce dal piano o riguarda sintomi/salute, suggerisci di sentire il nutrizionista. Formattazione: solo frasi brevi, elenchi con "- " e **grassetto**; niente tabelle né titoli.\n\nPIANO:\n${JSON.stringify(plan)}`,
+    system: `Sei l'assistente del piano alimentare dell'utente. Rispondi in italiano, in modo breve e pratico (max ~120 parole), basandoti SOLO sul piano qui sotto e sulla giornata corrente. Se la domanda esce dal piano o riguarda sintomi/salute, suggerisci di sentire il nutrizionista. Formattazione: solo frasi brevi, elenchi con "- " e **grassetto**; niente tabelle né titoli.\n\nPIANO:\n${planForPrompt(plan)}`,
     content: `Giornata corrente:\n${JSON.stringify(context)}\n\nDomanda: ${question}`,
     maxTokens: 4000,
     effort: 'low',

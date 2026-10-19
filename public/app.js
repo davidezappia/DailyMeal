@@ -8,6 +8,11 @@ const WD = ['', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sa
 const WD_SHORT = ['', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 const SLOTS = ['colazione', 'spuntino', 'pranzo', 'merenda', 'cena'];
 const SLOT_LABEL = { colazione: 'Colazione', spuntino: 'Spuntino', pranzo: 'Pranzo', merenda: 'Merenda', cena: 'Cena' };
+const AI_WHERE = {
+  llamacpp: 'Il PDF viene letto dal modello AI sul tuo server: non esce dalla tua rete.',
+  openrouter: 'Il testo del PDF viene inviato a OpenRouter (servizio esterno, i modelli gratuiti possono conservare i dati). Prima di caricarlo togli nome, dati personali e informazioni sanitarie non necessarie.',
+  anthropic: 'Il PDF viene inviato ad Anthropic (Claude) per essere letto.',
+};
 const OUT_LABEL = { casa: 'Casa', lavoro: 'Lavoro', ristorante: 'Ristorante' };
 
 let me = null;
@@ -446,6 +451,7 @@ async function profilePage() {
       <h2>Piano alimentare</h2>
       ${me.plan ? `<p><strong>${esc(plan?.title || me.plan.filename)}</strong><br><span class="muted">${esc(plan?.author || '')} · caricato il ${fmtDate(me.plan.created_at.slice(0, 10))}</span></p>` : '<p class="muted">Nessun piano caricato.</p>'}
       <label class="btn ${me.plan ? '' : 'primary'} file-btn">${me.plan ? 'Carica un nuovo piano (PDF)' : 'Carica il piano (PDF)'}<input type="file" id="pdf" accept="application/pdf" hidden></label>
+      <p class="hint">${AI_WHERE[me.ai] || ''}</p>
       ${plan ? `<details><summary>Cosa ho letto dal piano</summary>${planSummary(plan)}</details>` : ''}
     </section>
 

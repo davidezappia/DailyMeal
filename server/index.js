@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 3000;
 const MENU_DAYS = 14;
 const SESSION_MS = 180 * 864e5;
 if (PROVIDER === 'anthropic' && !process.env.ANTHROPIC_API_KEY) console.warn('ANTHROPIC_API_KEY non impostata: analisi PDF, menu e domande non funzioneranno.');
+if (PROVIDER === 'openrouter' && !process.env.OPENROUTER_API_KEY) console.warn('OPENROUTER_API_KEY non impostata: analisi PDF, menu e domande non funzioneranno.');
 
 app.set('trust proxy', process.env.TRUST_PROXY === 'true');
 app.disable('x-powered-by');
@@ -114,7 +115,7 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   const uid = req.user.id;
-  res.json({ user: req.user, plan: q.planMeta(uid) || null, settings: q.settings(uid), job: jobs.get(uid) || null, lastMenuDate: q.lastMenuDate(uid) });
+  res.json({ ai: PROVIDER, user: req.user, plan: q.planMeta(uid) || null, settings: q.settings(uid), job: jobs.get(uid) || null, lastMenuDate: q.lastMenuDate(uid) });
 });
 
 // ---------- plan & menu
