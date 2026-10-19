@@ -19,7 +19,12 @@ const OPENAI_COMPAT = {
     url: 'https://openrouter.ai/api/v1/chat/completions',
     headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'X-Title': 'DailyMeal' },
     // require_parameters: route only to providers that honour response_format (JSON schema).
-    extra: () => ({ model: process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free', provider: { require_parameters: true } }),
+    // Long silent reasoning before the JSON trips OpenRouter's upstream idle timeout: off for structured output.
+    extra: (schema) => ({
+      model: process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free',
+      provider: { require_parameters: true },
+      ...(schema && { reasoning: { enabled: false } }),
+    }),
   },
 }[PROVIDER];
 const client = PROVIDER === 'anthropic' ? new Anthropic() : null; // reads ANTHROPIC_API_KEY

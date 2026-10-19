@@ -5,8 +5,8 @@ import { planChoices, DETAIL_SEP, mentionsExcluded, norm } from './day.js';
 const stem = (w) => w.replace(/[aeiou]$/, '');
 export const wordsOf = (s) => norm(s).split(/[^a-z]+/).filter((w) => w.length >= 4).map(stem);
 
-// Specifications the plan's generic items allow ("verdure", "frutta di stagione", "cereali"…) and plain cooking words.
-const COMMON = `
+// Specifications the plan's generic items allow ("verdure", "frutta di stagione", "cereali"…).
+const FOODS = `
 zucchina zucchine melanzana melanzane peperone peperoni pomodoro pomodori pomodorini carota carote sedano finocchio finocchi
 spinaci bietola bietole cavolfiore cavolo cavoli broccolo broccoli broccoletti verza cappuccio cavolini bruxelles rapa rape cime
 radicchio lattuga insalata rucola valeriana songino indivia scarola cicoria catalogna puntarelle carciofo carciofi asparagi
@@ -22,14 +22,24 @@ tostato fette patata patate novelle dolci
 pollo tacchino coniglio vitello manzo bovino lonza maiale cavallo merluzzo nasello platessa sogliola spigola branzino orata
 dentice salmone tonno sgombro trota gamberi gamberetti calamari seppie polpo cozze vongole alici acciughe sardine
 ceci lenticchie fagioli borlotti cannellini piselli fave edamame
+mandorle mandorla noci nocciole pistacchi anacardi arachidi
+`;
+// Herbs, cooking methods, colors and connectives: they describe a food, they are not one.
+const DESCRIPTIVE = `
 basilico prezzemolo rosmarino salvia origano timo menta erba cipollina aneto curcuma zenzero pepe peperoncino curry paprika
 noce moscata limone aceto zafferano erbe aromatiche spezie
 forno griglia grigliato grigliati grigliata piastra vapore padella cartoccio lesso lessato lessati bollito crudo cruda crude
 cotto cotta saltato saltati spadellato stufato stufati gratinato gratinati arrosto arrostito julienne bastoncini cubetti
 insalata vellutata purea passata contorno misto mista misti miste fresco fresca freschi fresche leggero leggera stagione
 piatto ciotola bowl tiepido tiepida freddo fredda caldo calda semplice semplici scottato scottata marinato marinata
+lessa lesse lessata lessate ripassato ripassata ripassati arrostito arrostita arrostiti arrostite sodo soda sode strapazzate
+strapazzato frittata omelette albume albumi tuorlo occhio cubetti listarelle fettine rondelle spicchi scaglie tritato tritata
+condire condimento cucinare cottura crudo sbollentato sbollentati
+rosso rossa rossi rosse giallo gialla gialli gialle verdi bianco bianca bianchi bianche
+alla alle allo agli dalla dalle dello della delle degli sulla sulle nella nelle senza poco intero intera mezzo mezza
 `;
-const COMMON_WORDS = new Set(wordsOf(COMMON));
+const FOOD_WORDS = new Set(wordsOf(FOODS));
+const COMMON_WORDS = new Set([...FOOD_WORDS, ...wordsOf(DESCRIPTIVE)]);
 
 /** Words allowed in details and titles: everything the plan says, plus common produce and cooking words. */
 export function vocabulary(plan) {
@@ -39,9 +49,11 @@ export function vocabulary(plan) {
 
 
 const known = (text, vocab) => wordsOf(text).every((w) => vocab.has(w));
+// "100g Cereali (riso, farro) · farro perlato" → "Farro perlato"; details that are only a preparation fall back to the food.
 const shortName = (item) => {
   const [option, detail] = item.split(DETAIL_SEP);
-  const base = (detail || option.replace(/^[\d.,\s]*(g|ml|c\.|cucchiai\w*)?\s*/i, '')).split(/[(/–-]/)[0].trim();
+  const food = option.replace(/^[\d.,\s]*(g|ml|c\.|cucchiai\w*)?\s*/i, '').split(/[(/–-]/)[0].trim();
+  const base = detail && wordsOf(detail).some((w) => FOOD_WORDS.has(w)) ? detail : food;
   return base.charAt(0).toUpperCase() + base.slice(1);
 };
 
