@@ -1,7 +1,7 @@
 import express from 'express';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { q } from './db.js';
-import { parsePlan, generateMenu, ask, cleanPlan, SLOTS, PROVIDER, isoWeekday } from './ai.js';
+import { parsePlan, generateMenu, ask, cleanPlan, SLOTS, PROVIDER, PROVIDERS, isoWeekday } from './ai.js';
 import { composeDay, addDays, planChoices, isPlanItem, mentionsExcluded } from './day.js';
 import { sanitizeMeal, vocabulary } from './guard.js';
 
@@ -9,8 +9,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MENU_DAYS = 14;
 const SESSION_MS = 180 * 864e5;
-if (PROVIDER === 'anthropic' && !process.env.ANTHROPIC_API_KEY) console.warn('ANTHROPIC_API_KEY non impostata: analisi PDF, menu e domande non funzioneranno.');
-if (PROVIDER === 'openrouter' && !process.env.OPENROUTER_API_KEY) console.warn('OPENROUTER_API_KEY non impostata: analisi PDF, menu e domande non funzioneranno.');
+const REQUIRED_ENV = {
+  anthropic: ['ANTHROPIC_API_KEY'], openrouter: ['OPENROUTER_API_KEY'], gemini: ['GEMINI_API_KEY'],
+  azure: ['AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_DEPLOYMENT'], llamacpp: [],
+};
+for (const p of PROVIDERS) for (const v of REQUIRED_ENV[p]) if (!process.env[v]) console.warn(`${v} non impostata: il motore AI "${p}" non funzionerà.`);
 
 app.set('trust proxy', process.env.TRUST_PROXY === 'true');
 app.disable('x-powered-by');

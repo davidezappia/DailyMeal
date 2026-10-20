@@ -1,11 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { extractText, getDocumentProxy } from 'unpdf';
 
-// AI_PROVIDER: "anthropic" (default), "llamacpp" (llama-server on the LAN) or "openrouter" (hosted models).
-// llamacpp and openrouter share the OpenAI-compatible chat/completions path.
-export const PROVIDER = ['llamacpp', 'openrouter'].includes(process.env.AI_PROVIDER) ? process.env.AI_PROVIDER : 'anthropic';
+// AI_PROVIDER: one or more of anthropic, openrouter, gemini, azure, llamacpp, comma-separated and tried in order.
+// All but anthropic share the OpenAI-compatible chat/completions path.
+const KNOWN = ['anthropic', 'openrouter', 'gemini', 'azure', 'llamacpp'];
+export const PROVIDERS = (process.env.AI_PROVIDER || 'anthropic').split(',').map((p) => p.trim()).filter((p) => KNOWN.includes(p));
+if (!PROVIDERS.length) PROVIDERS.push('anthropic');
+export const PROVIDER = PROVIDERS.join(',');
+const list = (v, fallback = '') => (v || fallback).split(',').map((m) => m.trim()).filter(Boolean);
 const LLAMACPP_URL = (process.env.LLAMACPP_URL || 'http://localhost:8080').replace(/\/$/, '');
 const LLAMACPP_TIMEOUT_MS = Number(process.env.LLAMACPP_TIMEOUT_MIN || 30) * 60_000;
+const AZURE_ENDPOINT = (process.env.AZURE_OPENAI_ENDPOINT || '').replace(/\/$/, '');
 const OPENAI_COMPAT = {
   llamacpp: {
     name: 'LLM locale',
@@ -20,8 +25,7 @@ const OPENAI_COMPAT = {
     url: 'https://openrouter.ai/api/v1/chat/completions',
     headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'X-Title': 'DailyMeal' },
     // Comma-separated list, tried in order: free models come and go, so a failure moves on to the next one.
-    models: (process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free,nvidia/nemotron-3.5-super-vl:free')
-      .split(',').map((m) => m.trim()).filter(Boolean),
+    models: list(process.env.OPENROUTER_MODEL, 'nvidia/nemotron-3-super-120b-a12b:free,nvidia/nemotron-3.5-super-vl:free'),
     // require_parameters: route only to providers that honour response_format (JSON schema).
     // Long silent reasoning before the JSON trips OpenRouter's upstream idle timeout: off for structured output.
     extra: (schema, model) => ({
@@ -30,8 +34,25 @@ const OPENAI_COMPAT = {
       ...(schema && { reasoning: { enabled: false } }),
     }),
   },
-}[PROVIDER];
-const client = PROVIDER === 'anthropic' ? new Anthropic() : null; // reads ANTHROPIC_API_KEY
+  gemini: {
+    name: 'Google Gemini',
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    headers: { Authorization: `Bearer ${process.env.GEMINI_API_KEY}` },
+    models: list(process.env.GEMINI_MODEL, 'gemini-flash-latest'),
+    extra: (schema, model) => ({ model }),
+  },
+  azure: {
+    name: 'Azure OpenAI',
+    // v1 API: the model is the deployment name, no api-version needed.
+    url: `${AZURE_ENDPOINT}/openai/v1/chat/completions`,
+    headers: { 'api-key': process.env.AZURE_OPENAI_API_KEY },
+    models: list(process.env.AZURE_OPENAI_DEPLOYMENT),
+    // Reasoning deployments (o-series, gpt-5) reject max_tokens and a custom temperature.
+    limits: (maxTokens) => ({ max_completion_tokens: maxTokens }),
+    extra: (schema, model) => ({ model }),
+  },
+};
+const client = PROVIDERS.includes('anthropic') ? new Anthropic() : null; // reads ANTHROPIC_API_KEY
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5-5';
 export const SLOTS = ['colazione', 'spuntino', 'pranzo', 'merenda', 'cena'];
 
@@ -95,8 +116,18 @@ function menuSchema(plan) {
   });
 }
 
-function call(args) {
-  return PROVIDER === 'anthropic' ? callClaude(args) : callOpenAICompat(args);
+/** Tries each configured provider in order (each with its own model list) until one answers. */
+async function call(args) {
+  let lastError;
+  for (const p of PROVIDERS) {
+    try {
+      return await (p === 'anthropic' ? callClaude(args) : callOpenAICompat(OPENAI_COMPAT[p], args));
+    } catch (e) {
+      lastError = e;
+      if (PROVIDERS.length > 1) console.warn(`[ai] ${p} fallito: ${e.message}`);
+    }
+  }
+  throw lastError;
 }
 
 async function callClaude({ system, content, schema, maxTokens = 64000, effort = 'medium' }) {
@@ -133,13 +164,14 @@ async function toText(content) {
  * Tries each configured model in turn. App-side rather than OpenRouter's own `models` fallback,
  * which can't help once streaming has started (idle timeouts, invalid JSON mid-answer).
  */
-async function callOpenAICompat(args) {
-  const { models, name } = OPENAI_COMPAT;
+async function callOpenAICompat(api, args) {
+  const { models, name } = api;
+  if (!models.length) throw new Error(`${name}: nessun modello configurato`);
   const userText = await toText(args.content);
   let lastError;
   for (const model of models) {
     try {
-      return await callOnce({ ...args, userText }, model);
+      return await callOnce(api, { ...args, userText }, model);
     } catch (e) {
       lastError = e;
       if (models.length > 1) console.warn(`[ai] ${name} ${model} fallito: ${e.message}`);
@@ -149,16 +181,14 @@ async function callOpenAICompat(args) {
 }
 
 // Streams so slow generations aren't killed by fetch's 5-minute headers timeout.
-async function callOnce({ system, userText, schema, maxTokens = 32000 }, model) {
-  const api = OPENAI_COMPAT;
+async function callOnce(api, { system, userText, schema, maxTokens = 32000 }, model) {
   const res = await fetch(api.url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...api.headers },
     signal: AbortSignal.timeout(LLAMACPP_TIMEOUT_MS),
     body: JSON.stringify({
       messages: [{ role: 'system', content: system }, { role: 'user', content: userText }],
-      max_tokens: maxTokens,
-      temperature: schema ? 0.4 : 0.6,
+      ...(api.limits ? api.limits(maxTokens) : { max_tokens: maxTokens, temperature: schema ? 0.4 : 0.6 }),
       stream: true,
       ...api.extra(schema, model),
       ...(schema && { response_format: { type: 'json_schema', json_schema: { name: 'output', strict: true, schema } } }),

@@ -12,7 +12,7 @@ sport, pranzi al lavoro e pasto libero. Self-hosted, leggera, pensata per lo sma
 ![Node](https://img.shields.io/badge/node-%E2%89%A522.13-3c873a?logo=node.js&logoColor=white)
 ![SQLite](https://img.shields.io/badge/db-SQLite%20integrato-0f80cc?logo=sqlite&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-ready-2496ed?logo=docker&logoColor=white)
-![AI](https://img.shields.io/badge/AI-Claude%20%7C%20OpenRouter%20%7C%20llama.cpp-d97757)
+![AI](https://img.shields.io/badge/AI-Claude%20%7C%20Gemini%20%7C%20Azure%20%7C%20OpenRouter%20%7C%20llama.cpp-d97757)
 ![PWA](https://img.shields.io/badge/PWA-installabile-5a0fc8)
 ![License](https://img.shields.io/badge/licenza-MIT-blue)
 
@@ -114,11 +114,32 @@ OPENROUTER_API_KEY=sk-or-...
 - Puoi indicare più modelli separati da virgola: se uno è giù, va in timeout o risponde male, l’app riprova con il successivo.
 - **Privacy**: il testo del PDF e il piano vengono inviati a un servizio esterno; i modelli gratuiti possono conservare o usare i dati. Carica PDF senza nome e dati personali. L'app non invia mai nome, autore e date del piano nelle richieste di menu e domande. Alcuni modelli gratuiti richiedono di abilitarne l'uso nelle [impostazioni privacy](https://openrouter.ai/settings/privacy) di OpenRouter.
 
+### Google Gemini e Azure OpenAI
+
+```env
+AI_PROVIDER=azure,gemini          # più motori: se il primo fallisce si usa il successivo
+
+GEMINI_API_KEY=...                # aistudio.google.com/app/apikey
+GEMINI_MODEL=gemini-flash-latest
+
+AZURE_OPENAI_ENDPOINT=https://NOME-RISORSA.openai.azure.com
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_DEPLOYMENT=nome-del-deployment
+```
+
+- **Azure**: usa l'API v1 (`/openai/v1`), indica il nome del *deployment*. Serve un modello che supporti gli structured outputs (es. famiglie GPT-4o e successive).
+- **Gemini**: con la chiave gratuita Google può usare i dati per migliorare i suoi servizi; per un piano alimentare valuta il piano a pagamento o un altro motore.
+
 ## Configurazione
 
 | Variabile | Default | Descrizione |
 |---|---|---|
-| `AI_PROVIDER` | `anthropic` | `anthropic`, `openrouter` oppure `llamacpp` |
+| `AI_PROVIDER` | `anthropic` | `anthropic`, `openrouter`, `gemini`, `azure`, `llamacpp`; più valori separati da virgola = catena di riserva |
+| `GEMINI_API_KEY` | | Chiave Google AI Studio |
+| `GEMINI_MODEL` | `gemini-flash-latest` | Modelli Gemini separati da virgola |
+| `AZURE_OPENAI_ENDPOINT` | | Es. `https://nome-risorsa.openai.azure.com` |
+| `AZURE_OPENAI_API_KEY` | | Chiave della risorsa Azure OpenAI |
+| `AZURE_OPENAI_DEPLOYMENT` | | Nome del deployment (più deployment separati da virgola) |
 | `OPENROUTER_API_KEY` | | Chiave API OpenRouter |
 | `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free,nvidia/nemotron-3.5-super-vl:free` | Modelli OpenRouter separati da virgola, provati in ordine: se uno fallisce si passa al successivo |
 | `ANTHROPIC_API_KEY` | | Chiave API Anthropic |
