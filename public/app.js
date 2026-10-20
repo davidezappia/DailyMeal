@@ -419,6 +419,13 @@ function md(text) {
 const SUGGESTIONS = ['Posso sostituire il pesce di oggi con della carne?', 'L\'orata è un pesce magro o semigrasso?', 'Cosa ordino in pizzeria se non è il pasto libero?', 'Quanto pesa una porzione di frutta secca?'];
 async function askPage() {
   if (!me.plan) return noPlan();
+  if (me.settings.ai === false) {
+    $app.innerHTML = `<header class="page-head"><p class="eyebrow">Dubbi sul piano</p><h1>Chiedi</h1></header>
+      <div class="empty card"><div class="empty-icon">💬</div><h2>La chat usa l’AI</h2>
+      <p class="muted">Hai scelto di usare DailyMeal senza AI. Per fare domande sul piano riattivala nel Profilo.</p>
+      <a class="btn" href="#/profile">Vai al Profilo</a></div>`;
+    return;
+  }
   const render = () => {
     $app.innerHTML = `
       <header class="page-head"><p class="eyebrow">Dubbi sul piano</p><h1>Chiedi</h1></header>
@@ -461,8 +468,9 @@ async function profilePage() {
     <section class="card stack">
       <h2>Piano alimentare</h2>
       ${me.plan ? `<p><strong>${esc(plan?.title || me.plan.filename)}</strong><br><span class="muted">${esc(plan?.author || '')} · caricato il ${fmtDate(me.plan.created_at.slice(0, 10))}</span></p>` : '<p class="muted">Nessun piano caricato.</p>'}
-      <label class="btn ${me.plan ? '' : 'primary'} file-btn">${me.plan ? 'Carica un nuovo piano (PDF)' : 'Carica il piano (PDF)'}<input type="file" id="pdf" accept="application/pdf" hidden></label>
-      <p class="hint">${me.ai.split(',').map((p) => AI_WHERE[p]).filter(Boolean).join(' Se non risponde: ')}</p>
+      ${s.ai !== false ? `<label class="btn ${me.plan ? '' : 'primary'} file-btn">${me.plan ? 'Carica un nuovo piano (PDF)' : 'Carica il piano (PDF)'}<input type="file" id="pdf" accept="application/pdf" hidden></label>
+      <p class="hint">${me.ai.split(',').map((p) => AI_WHERE[p]).filter(Boolean).join(' Se non risponde: ')}</p>` : ''}
+      <button type="button" class="btn ${s.ai === false && !me.plan ? 'primary' : ''}" id="import">Senza AI: importa il piano in JSON</button>
       ${plan ? `<details><summary>Cosa ho letto dal piano</summary>${planSummary(plan)}</details>` : ''}
     </section>
 
@@ -478,6 +486,9 @@ async function profilePage() {
       <fieldset><legend>Giorni di sport</legend>${dayChips('sport', s.sport_days)}
         <p class="hint">In questi giorni compare lo spuntino pre/post allenamento. Puoi cambiare il singolo giorno dalla home.</p></fieldset>
       <fieldset><legend>Pranzo al lavoro</legend>${dayChips('work', s.work_lunch_days)}</fieldset>
+      <fieldset><legend>Intelligenza artificiale</legend>
+        <label class="check"><input type="checkbox" name="ai" ${s.ai !== false ? 'checked' : ''}> Usa l’AI per leggere il PDF, creare i menu e rispondere in chat</label>
+        <p class="hint">Senza AI i menu ruotano tra i tuoi preferiti, i pasti già fatti e le alternative del piano; la chat non è disponibile.</p></fieldset>
       <fieldset><legend>Convivente</legend>
         <input name="household" value="${esc(s.household || '')}" placeholder="Username di chi vive con te" autocapitalize="none" autocomplete="off">
         <p class="hint">${!me.household ? 'I pranzi e le cene a casa verranno coordinati: ingredienti in comune quando i due piani lo permettono. Anche l’altra persona deve inserire il tuo username (' + esc(me.user.username) + ').'
@@ -513,22 +524,26 @@ async function profilePage() {
 
     <button class="btn ghost" id="logout">Esci</button>`;
 
-  document.getElementById('pdf').onchange = (e) => uploadPlan(e.target.files[0]);
+  document.getElementById('pdf')?.addEventListener('change', (e) => uploadPlan(e.target.files[0]));
+  document.getElementById('import').onclick = importSheet;
   document.getElementById('sf').onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
     const body = {
       sport_days: f.getAll('sport').map(Number),
       work_lunch_days: f.getAll('work').map(Number),
+      ai: f.has('ai'),
       household: String(f.get('household') || '').trim(),
       excluded: String(f.get('excluded') || '').split(',').map((x) => x.trim()).filter(Boolean),
       free_meal: Number(f.get('fm_wd')) ? { weekday: Number(f.get('fm_wd')), slot: f.get('fm_slot') } : null,
     };
     try {
       const before = (me.settings.excluded || []).join(',');
+      const aiBefore = me.settings.ai !== false;
       me.settings = await api('/settings', { method: 'PUT', body });
       toast(me.settings.excluded.join(',') !== before ? 'Salvato. Rigenera il menu da "Menu" per applicare le esclusioni ai giorni già creati' : 'Impostazioni salvate', 'ok');
-      if ((me.household?.username || null) !== me.settings.household) { me = await api('/me'); profilePage(); }
+      // Housemate status and the PDF/JSON buttons depend on these: redraw the profile.
+      if ((me.household?.username || null) !== me.settings.household || me.settings.ai !== aiBefore) { me = await api('/me'); profilePage(); }
     } catch (err) { toast(err.message, 'error'); }
   };
   document.getElementById('wf').onsubmit = async (e) => {
@@ -563,6 +578,45 @@ function weightChart(ws) {
       </svg>
       <figcaption>${delta > 0 ? '+' : ''}${delta} kg dal ${fmtDate(pts[0].date, { day: 'numeric', month: 'short' })}</figcaption>
     </figure>`;
+}
+
+async function importSheet() {
+  const prompt = await fetch('/api/plan/prompt').then((r) => r.text());
+  $sheet.innerHTML = `
+    <form method="dialog" class="stack" id="if">
+      <h2>Piano senza AI</h2>
+      <ol class="steps">
+        <li>Copia il testo qui sotto.</li>
+        <li>Apri Claude o ChatGPT, allega il PDF del piano e incolla il testo.</li>
+        <li>Incolla qui la risposta, oppure salvala come file <code>.json</code> e caricala.</li>
+      </ol>
+      <textarea id="pp" rows="3" readonly>${esc(prompt)}</textarea>
+      <button type="button" class="btn" id="cp">Copia il testo per il chatbot</button>
+      <label>Risposta del chatbot<textarea name="json" rows="5" placeholder='{"title": "...", "days": [...]}'></textarea></label>
+      <label class="btn file-btn">Oppure carica il file .json<input type="file" id="jf" accept=".json,application/json,text/plain" hidden></label>
+      <div class="row">
+        <button class="btn" value="cancel" formnovalidate>Annulla</button>
+        <button type="button" class="btn primary" id="imp">Importa</button>
+      </div>
+    </form>`;
+  $sheet.onclose = null;
+  $sheet.showModal();
+  const form = document.getElementById('if');
+  document.getElementById('cp').onclick = async () => {
+    // Clipboard API needs HTTPS; on a plain-http LAN address fall back to selecting the text.
+    try { await navigator.clipboard.writeText(prompt); } catch { const t = document.getElementById('pp'); t.select(); document.execCommand('copy'); }
+    toast('Testo copiato', 'ok');
+  };
+  document.getElementById('jf').onchange = async (e) => { form.elements.json.value = await e.target.files[0].text(); };
+  document.getElementById('imp').onclick = async () => {
+    const res = await fetch(`/api/plan/import?start=${today()}&filename=piano.json`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: form.elements.json.value });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return toast(data?.error || `Errore ${res.status}`, 'error');
+    $sheet.close();
+    me = await api('/me');
+    watchJob(me.job);
+    toast('Piano importato', 'ok');
+  };
 }
 
 async function uploadPlan(file) {

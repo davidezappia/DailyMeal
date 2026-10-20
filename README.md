@@ -44,6 +44,7 @@ mercoledì si pranza in ufficio e che il pasto libero quest'anno è il venerdì.
 | 💼 **Pasti fuori** | Per pranzo e cena: Casa / Lavoro / Ristorante, con le indicazioni del piano per mangiare fuori. Pranzo al lavoro ricorrente. |
 | 🎉 **Pasto libero** | Giorno e pasto fissi finché non li cambi. Se lo sposti, i menu dei due giorni si scambiano, come prevedono i piani. |
 | 💬 **Chiedi** | Domande libere sul *tuo* piano: "posso sostituire il pesce con la carne?", "l'orata è un pesce magro?". |
+| 🔌 **Anche senza AI** | Il piano si converte con Claude o ChatGPT e si importa in JSON; i menu ruotano tra preferiti, pasti già fatti e alternative del piano. |
 | ⚖️ **Peso** | Registro settimanale con grafico. |
 | 👥 **Multi-utente** | Ognuno il suo account, piano e menu. |
 | 🌗 **Mobile first** | PWA installabile, tema chiaro e scuro automatico. |
@@ -67,6 +68,16 @@ Su smartphone: *Condividi → Aggiungi a schermata Home*.
 
 > Il primo utente può sempre registrarsi. Per aggiungerne altri metti `ALLOW_SIGNUP=true`,
 > crea gli account, poi rimettilo a `false`.
+
+## Senza AI
+
+Ogni utente può disattivare l'AI dal **Profilo → Intelligenza artificiale**:
+
+1. **Profilo → Senza AI: importa il piano in JSON**: copia il testo proposto, incollalo in Claude o ChatGPT insieme al PDF del piano e importa la risposta (file `.json` o testo incollato). L'app la valida rigorosamente prima di accettarla.
+2. I menu vengono creati **a rotazione, senza AI**: prima i tuoi preferiti, poi i pasti già fatti, poi nuove combinazioni delle alternative del piano. Lo stesso piatto non torna prima di 3 giorni e ogni pasto passa gli stessi controlli (piano e intolleranze).
+3. La chat **Chiedi** non è disponibile.
+
+L'import JSON funziona anche con l'AI attiva, se preferisci convertire il piano altrove.
 
 ## Motore AI
 

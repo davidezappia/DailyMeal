@@ -46,7 +46,7 @@ export function favoritesFor(plan, favorites, wd, slot) {
 }
 
 /** Meal slots of a day in the plan's own order (a "spuntino" may be mid-afternoon); shared-only slots go in their usual place. */
-function templateSlots(plan, wd) {
+export function templateSlots(plan, wd) {
   const order = [...new Set(plan.days.find((d) => d.weekday === wd)?.meals.map((m) => m.slot) || [])];
   for (const s of new Set(plan.shared_meals.map((m) => m.slot))) {
     if (order.includes(s)) continue;

@@ -4,6 +4,8 @@ import { q } from './db.js';
 import { parsePlan, generateMenu, ask, cleanPlan, SLOTS, PROVIDER, PROVIDERS, isoWeekday } from './ai.js';
 import { composeDay, addDays, planChoices, isPlanItem, mentionsExcluded } from './day.js';
 import { sanitizeMeal, vocabulary } from './guard.js';
+import { rotateMenu } from './rotation.js';
+import { importPlan, planPrompt, MAX_IMPORT_BYTES } from './plan-import.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -59,9 +61,18 @@ function runJob(uid, label, fn) {
   return true;
 }
 
+const HISTORY_DAYS = 60;
+const usesAI = (uid) => q.settings(uid).ai !== false;
+
 async function fillMenu(uid, from, days) {
   const plan = loadPlan(uid);
   const excluded = q.settings(uid).excluded || [];
+  if (!usesAI(uid)) {
+    const history = q.menuRange(uid, addDays(from, -HISTORY_DAYS), addDays(from, -1));
+    const dates = Array.from({ length: days }, (_, i) => addDays(from, i));
+    for (const d of rotateMenu({ plan, dates, favorites: q.favorites(uid), history, excluded })) q.saveMenuDay(uid, d.date, d.meals);
+    return;
+  }
   const vocab = vocabulary(plan);
   const hm = housemate(uid);
   const dates = Array.from({ length: days }, (_, i) => addDays(from, i));
@@ -130,6 +141,7 @@ app.post('/api/plan', (req, res) => {
   if (typeof data !== 'string' || !isDate(start)) return bad(res, 'Dati mancanti');
   if (!Buffer.from(data.slice(0, 8), 'base64').toString().startsWith('%PDF')) return bad(res, 'Il file non è un PDF');
   const uid = req.user.id;
+  if (!usesAI(uid)) return bad(res, "Hai disattivato l'AI: importa il piano in JSON (Profilo → Senza AI) oppure riattiva l'AI");
   const ok = runJob(uid, 'Analisi del piano e creazione menu', async () => {
     const plan = await parsePlan(data);
     if (!plan.days?.length) throw new Error('Non ho trovato un piano settimanale nel PDF');
@@ -245,6 +257,7 @@ app.put('/api/settings', (req, res) => {
   const settings = {
     sport_days: days(req.body.sport_days),
     work_lunch_days: days(req.body.work_lunch_days),
+    ai: req.body.ai !== false,
     excluded: Array.isArray(req.body.excluded)
       ? [...new Set(req.body.excluded.map((x) => text(x, 40).toLowerCase()).filter(Boolean))].slice(0, 30) : [],
     household: /^[a-z0-9._-]{3,40}$/.test(String(req.body.household || '').toLowerCase()) && String(req.body.household).toLowerCase() !== req.user.username
@@ -256,7 +269,25 @@ app.put('/api/settings', (req, res) => {
 });
 
 // ---------- questions
+app.get('/api/plan/prompt', (req, res) => res.type('text/plain').send(planPrompt()));
+
+// Plan converted by an external chatbot: validated here, no AI needed.
+app.post('/api/plan/import', express.text({ type: '*/*', limit: MAX_IMPORT_BYTES }), (req, res) => {
+  const start = req.query.start;
+  if (!isDate(start)) return bad(res, 'Data non valida');
+  let plan;
+  try { plan = importPlan(typeof req.body === 'string' ? req.body : ''); } catch (e) { return bad(res, e.message); }
+  const uid = req.user.id;
+  const ok = runJob(uid, usesAI(uid) ? 'Creazione menu' : 'Creazione menu senza AI', async () => {
+    q.savePlan(uid, text(req.query.filename, 200) || 'piano.json', plan);
+    q.clearMenuFrom(uid, start);
+    await fillMenu(uid, start, MENU_DAYS);
+  });
+  ok ? res.status(202).json({ ok }) : bad(res, 'Elaborazione già in corso', 409);
+});
+
 app.post('/api/ask', async (req, res) => {
+  if (!usesAI(req.user.id)) return bad(res, "La chat usa l'AI: attivala nel Profilo per fare domande");
   const question = text(req.body.question, 1000);
   if (!question || !isDate(req.body.date)) return bad(res, 'Domanda mancante');
   const plan = loadPlan(req.user.id);

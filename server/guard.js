@@ -50,7 +50,7 @@ export function vocabulary(plan) {
 
 const known = (text, vocab) => wordsOf(text).every((w) => vocab.has(w));
 // "100g Cereali (riso, farro) · farro perlato" → "Farro perlato"; details that are only a preparation fall back to the food.
-const shortName = (item) => {
+export const shortName = (item) => {
   const [option, detail] = item.split(DETAIL_SEP);
   const food = option.replace(/^[\d.,\s]*(g|ml|c\.|cucchiai\w*)?\s*/i, '').split(/[(/–-]/)[0].trim();
   const base = detail && wordsOf(detail).some((w) => FOOD_WORDS.has(w)) ? detail : food;

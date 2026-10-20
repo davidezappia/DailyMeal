@@ -68,7 +68,7 @@ const items = { type: 'array', items: item };
 const slot = { type: 'string', enum: SLOTS, description: 'spuntino = metà mattina (tra colazione e pranzo); merenda = pomeriggio (tra pranzo e cena), anche se il piano la chiama "spuntino"' };
 const OUT_KINDS = ['lavoro', 'ristorante', 'entrambi'];
 
-const PLAN_SCHEMA = obj({
+export const PLAN_SCHEMA = obj({
   title: str,
   author: { ...str, description: 'nutrizionista/medico, "" se assente' },
   valid_from: { ...str, description: 'YYYY-MM-DD o ""' },
