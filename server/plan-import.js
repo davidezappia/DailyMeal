@@ -8,6 +8,9 @@ export const planPrompt = () => `Ti allego il mio piano alimentare (PDF). Conver
 Regole:
 - Trascrivi fedelmente: non inventare alimenti e non cambiare le grammature.
 - Ogni alimento obbligatorio è un elemento di "items"; le alternative separate da "oppure" vanno in "options"; "optional": true per gli alimenti FACOLTATIVI.
+- Ogni alimento deve avere la sua grammatura o quantità, come scritta nel piano (es. "100g Pasta", "2 Uova").
+- Se il piano indica le porzioni per pasto valide tutti i giorni (es. "Pranzo: 100g cereali oppure…"), mettile in "shared_meals" e lascia vuoti gli "items" dei giorni.
+- Un eventuale "menù di esempio" o "menù settimanale tipo" senza grammature NON va in "days": riportalo al massimo come voce del "glossary".
 - weekday: 1 = lunedì … 7 = domenica. "slot" solo tra: colazione, spuntino, pranzo, merenda, cena (spuntino = metà mattina, merenda = pomeriggio).
 - Rispondi SOLO con il JSON, senza testo prima o dopo.
 

@@ -37,3 +37,16 @@ test('cleanPlan moves the work lunch out of shared meals and classifies eating-o
   assert.deepEqual(p.eating_out.map((o) => [o.name, o.kind]), [['Pranzo in settimana al lavoro/ mensa', 'lavoro'], ['Sushi', 'ristorante'], ['Opzione 1', 'entrambi']]);
   assert.deepEqual(cleanPlan(p), p, 'idempotent');
 });
+
+test('cleanPlan ignores a sample menu without quantities when the shared meals carry the real portions', () => {
+  const p = cleanPlan({
+    days: [{ weekday: 1, meals: [
+      { slot: 'pranzo', free: false, items: [it('Quinoa', 'Bulgur'), it('Bocconcini di pollo'), it('Verdure a piacere')] },
+      { slot: 'cena', free: false, items: [it('80g Riso'), it('2 Uova')] }, // a real day-specific portion stays
+    ] }],
+    shared_meals: [{ name: 'Pranzo', slot: 'pranzo', items: [it('100g Cereali', '100g Pasta'), it('160g Carne bianca', '2 Uova'), it('Verdure a piacere')] }],
+    workout_snack: [], eating_out: [],
+  });
+  assert.deepEqual(p.days[0].meals[0].items, []);
+  assert.equal(p.days[0].meals[1].items.length, 2);
+});

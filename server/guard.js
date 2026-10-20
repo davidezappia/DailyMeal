@@ -50,9 +50,16 @@ export function vocabulary(plan) {
 
 const known = (text, vocab) => wordsOf(text).every((w) => vocab.has(w));
 // "100g Cereali (riso, farro) · farro perlato" → "Farro perlato"; details that are only a preparation fall back to the food.
+// "150g (1 vasetto) Yogurt greco" → "Yogurt greco"; "Tortino mele: 1 Tortino + 150ml Latte" → "Tortino mele".
+const SHORT_NAME_WORDS = 4;
 export const shortName = (item) => {
   const [option, detail] = item.split(DETAIL_SEP);
-  const food = option.replace(/^[\d.,\s]*(g|ml|c\.|cucchiai\w*)?\s*/i, '').split(/[(/–-]/)[0].trim();
+  const food = option
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/^[\s\d.,½-]*(g|gr|kg|ml|c\.|cucchiai\w*|cucchiain\w*|vasett\w*|fett\w*)?\.?\s+/i, '')
+    .split(/[:+,/–]|\s-\s|\soppure\s/i)[0]
+    .trim().split(/\s+/).slice(0, SHORT_NAME_WORDS).join(' ')
+    .replace(/(\s+(e|di|da|del|della|dei|con|senza|a|al|alla|in|per))+$/i, '');
   const base = detail && wordsOf(detail).some((w) => FOOD_WORDS.has(w)) ? detail : food;
   return base.charAt(0).toUpperCase() + base.slice(1);
 };

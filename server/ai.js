@@ -74,7 +74,7 @@ export const PLAN_SCHEMA = obj({
   valid_from: { ...str, description: 'YYYY-MM-DD o ""' },
   days: {
     type: 'array',
-    description: 'una voce per giorno della settimana previsto dal piano. Se il piano non distingue i giorni, ripeti lo stesso schema per 1..7',
+    description: 'una voce per giorno della settimana previsto dal piano, con le porzioni e le grammature. Se il piano non distingue i giorni, metti i giorni 1..7 con items vuoti e le porzioni in shared_meals. Un "menù di esempio" senza grammature NON va qui',
     items: obj({
       weekday: { type: 'integer', description: '1=lunedì ... 7=domenica' },
       meals: { type: 'array', items: obj({ slot, free: { type: 'boolean', description: 'pasto libero' }, items }) },
@@ -243,6 +243,14 @@ export function cleanPlan(plan) {
   // A day item like "COLAZIONE DOLCE (vedi pagina 6)" is a pointer to the shared meals, not a food.
   const isPointer = (i) => i.options.every((o) => /vedi|pagina|pag\.|\b(colazione|merenda)\b/i.test(o) && !/\d+\s*g\b/i.test(o));
   const guessKind = (name) => (atWork.test(name) ? 'lavoro' : /ristorante|pizz|sushi|aperitiv|cinese|pok|pasto preferito/i.test(name) ? 'ristorante' : 'entrambi');
+  // A "menù di esempio" copied into the days ("Latte", "Quinoa"…) has almost no quantities, while the
+  // real portions sit in the shared meals: then the day is an example, and the portions must win.
+  const quantified = (items) => {
+    const opts = items.flatMap((i) => i.options);
+    return opts.length ? opts.filter((o) => /\d/.test(o)).length / opts.length : 0;
+  };
+  const sharedQuantified = new Set(shared.filter((m) => quantified(m.items) >= 0.5).map((m) => m.slot));
+  const isExample = (m) => sharedQuantified.has(m.slot) && quantified(m.items) < 0.5;
   return {
     ...plan,
     eating_out: [
@@ -252,7 +260,7 @@ export function cleanPlan(plan) {
     shared_meals: shared,
     days: plan.days.map((d) => ({
       ...d,
-      meals: d.meals.map((m) => (sharedSlots.has(m.slot) && m.items.every(isPointer) ? { ...m, items: [] } : m)),
+      meals: d.meals.map((m) => ((sharedSlots.has(m.slot) && m.items.every(isPointer)) || isExample(m) ? { ...m, items: [] } : m)),
     })),
   };
 }

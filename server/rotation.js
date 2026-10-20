@@ -21,7 +21,7 @@ export function rotateMenu({ plan, dates, favorites = [], history = [], excluded
 
   return dates.map((date, di) => {
     const wd = isoWeekday(date);
-    const meals = templateSlots(plan, wd).map((slot) => {
+    const meals = templateSlots(plan, wd).map((slot, si) => {
       const planMeal = plan.days.find((d) => d.weekday === wd)?.meals.find((m) => m.slot === slot);
       if (planMeal?.free) return { slot, title: 'Pasto libero', items: [], free: true };
       const groups = planChoices(plan, wd, slot);
@@ -40,7 +40,7 @@ export function rotateMenu({ plan, dates, favorites = [], history = [], excluded
         return (runUses.get(k) || 0) < MAX_USES_PER_RUN && (!last || daysBetween(last, date) >= MIN_GAP_DAYS);
       };
       const daysSince = (title) => { const last = lastUse.get(key(slot, title)); return last ? daysBetween(last, date) : Infinity; };
-      const pick = candidates.find((c) => available(c.title)) || freshCombination(groups, di, excluded, daysSince);
+      const pick = candidates.find((c) => available(c.title)) || freshCombination(groups, di + si, excluded, daysSince); // + si: lunch and dinner rotate out of step
 
       const k = key(slot, pick.title);
       lastUse.set(k, date);
