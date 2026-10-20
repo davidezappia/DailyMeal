@@ -212,7 +212,9 @@ details ul { color: var(--muted); }
 .chart circle { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
 .chart figcaption { font-size: .85rem; color: var(--muted); text-align: right; }
 .housemate { margin: 12px 0 0; font-size: .85rem; color: var(--muted); }
+.housemate summary { font-weight: 400; color: var(--muted); }
 .housemate strong { color: var(--text); font-weight: 600; }
+.housemate ul { margin-top: 4px; }
 .workout-ext { margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-sm); border-left: 3px solid var(--c-sport); background: color-mix(in srgb, var(--c-sport) 8%, transparent); }
 .workout-ext p { margin: 0; font-size: .9rem; }
 .workout-ext strong { color: var(--c-sport); }

@@ -163,7 +163,7 @@ function mealCard(m, day, extra = '') {
         ${m.free ? '<p class="muted">Qualsiasi alimento, con buonsenso sulle quantità. 🎉</p>' : ''}
         ${planned}
         ${outBlock}`}
-      ${m.housemate ? `<p class="housemate">🏠 ${esc(day.housemate)} mangia: <strong>${esc(m.housemate.title)}</strong></p>` : ''}
+      ${m.housemate ? `<details class="housemate"><summary>🏠 ${esc(day.housemate)} mangia: <strong>${esc(m.housemate.title)}</strong></summary><ul>${m.housemate.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></details>` : ''}
       ${extra}
       ${outOpts}
       ${!restaurant && m.items.length && m.planOptions.length && !m.free ? `<details class="plan-opts"><summary>Alternative dal piano</summary>${planList(m.planOptions)}</details>` : ''}
