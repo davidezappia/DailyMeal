@@ -209,12 +209,18 @@ const MAX_FAVORITES_IN_PROMPT = 20;
  * @param {object} plan @param {string[]} dates YYYY-MM-DD
  * @param {Array<{slot:string, weekday:number, title:string, items:string[]}>} favorites meals the user liked
  * @param {string[]} excluded foods the user must avoid (intolerances)
+ * @param {Array<{date:string, meals:{slot:string,title:string,items:string[]}[]}>} household the housemate's home meals on the same dates
  * Returns raw model output: callers must pass each meal through guard.sanitizeMeal.
  */
-export async function generateMenu(plan, dates, favorites = [], excluded = []) {
+export async function generateMenu(plan, dates, favorites = [], excluded = [], household = []) {
   const days = dates.map((d) => `${d} (weekday ${isoWeekday(d)})`).join('\n');
   const favs = favorites.slice(0, MAX_FAVORITES_IN_PROMPT)
     .map((f) => `- ${f.slot}, weekday ${f.weekday}: ${f.title} (${f.items.join(', ')})`).join('\n');
+  const shared = household.flatMap((d) => d.meals.map((m) => `- ${d.date} ${m.slot}: ${m.title} (${m.items.join(', ')})`)).join('\n');
+  const houseRule = shared
+    ? `\n\nA casa mangia anche un convivente con un piano diverso. Questi sono i suoi pranzi e cene: quando il TUO piano lo permette, per lo stesso giorno e pasto scegli alternative e dettagli con gli stessi ingredienti principali (stessa verdura, stessa proteina, stesso cereale) e un titolo simile, così si cucina una volta sola. Grammature e alternative restano solo quelle del tuo piano:
+${shared}`
+    : '';
   const favRule = favs
     ? `\n\nCombinazioni che piacciono all'utente: riproponine alcune (1-3 a settimana), identiche, solo nello stesso pasto e, per pranzo e cena, nello stesso weekday (colazione e merenda vanno bene in qualsiasi giorno):\n${favs}`
     : '';
@@ -230,7 +236,7 @@ Regole:
 - "title" è il nome del piatto composto SOLO dagli alimenti scelti (es. "Riso basmati con zucchine").${excluded.length ? `
 - L'utente NON può mangiare: ${excluded.join(', ')}. Non scegliere mai alternative che li contengono.` : ''}
 - Pasto libero: free=true, title "Pasto libero", items [].
-- Non aggiungere lo spuntino pre/post allenamento: lo gestisce l'app.${favRule}`,
+- Non aggiungere lo spuntino pre/post allenamento: lo gestisce l'app.${favRule}${houseRule}`,
     schema: menuSchema(plan),
   });
   return out;

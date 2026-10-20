@@ -83,6 +83,9 @@ export function sanitizeMeal(plan, wd, meal, vocab, excluded = []) {
   }).filter(Boolean);
 
   const title = (meal.title || '').trim();
-  const titleOk = title && title.length <= 80 && known(title, vocab) && !mentionsExcluded(title, excluded);
+  // The dish name may only mention foods that survived sanitizing (no "lentils" title over an eggs dish).
+  const inMeal = new Set(wordsOf(items.join(' ')));
+  const namesOnlyItsFoods = wordsOf(title).every((w) => !FOOD_WORDS.has(w) || inMeal.has(w));
+  const titleOk = title && title.length <= 80 && known(title, vocab) && namesOnlyItsFoods && !mentionsExcluded(title, excluded);
   return { slot: meal.slot, title: titleOk ? title : items.slice(0, 2).map(shortName).join(' e '), items, free: false };
 }

@@ -139,7 +139,7 @@ function noPlan() {
 
 const mealIcon = { colazione: '☕', spuntino: '🍎', pranzo: '🥗', merenda: '🥜', cena: '🍽️' };
 
-function mealCard(m, day) {
+function mealCard(m, day, extra = '') {
   const outOpts = ['pranzo', 'cena'].includes(m.slot)
     ? `<div class="seg" role="group" aria-label="Dove mangi a ${m.label.toLowerCase()}">${Object.entries(OUT_LABEL).map(([k, v]) =>
         `<button data-out="${m.slot}" data-kind="${k}" aria-pressed="${(m.out || 'casa') === k}">${v}</button>`).join('')}</div>`
@@ -163,9 +163,24 @@ function mealCard(m, day) {
         ${m.free ? '<p class="muted">Qualsiasi alimento, con buonsenso sulle quantità. 🎉</p>' : ''}
         ${planned}
         ${outBlock}`}
+      ${m.housemate ? `<p class="housemate">🏠 ${esc(day.housemate)} mangia: <strong>${esc(m.housemate.title)}</strong></p>` : ''}
+      ${extra}
       ${outOpts}
       ${!restaurant && m.items.length && m.planOptions.length && !m.free ? `<details class="plan-opts"><summary>Alternative dal piano</summary>${planList(m.planOptions)}</details>` : ''}
     </article>`;
+}
+
+/** On sport days the pre/post-workout snack extends the afternoon snack; without one it gets its own card before dinner. */
+function mealsWithWorkout(day) {
+  const workout = day.sport && day.workoutSnack.length ? day.workoutSnack : null;
+  if (!workout) return day.meals.map((m) => mealCard(m, day)).join('');
+  const isSnack = (m) => ['merenda', 'spuntino'].includes(m.slot) && !m.free;
+  const lunch = day.meals.findIndex((m) => m.slot === 'pranzo');
+  const host = day.meals.find((m, i) => isSnack(m) && i > lunch) || day.meals.find(isSnack);
+  const ext = `<div class="workout-ext"><p><strong>⚡ Giorno di sport</strong> · in più, prima o dopo l'allenamento</p>${choices(workout)}</div>`;
+  const card = `<article class="meal card workout"><header><span class="slot-badge">⚡ Pre/post allenamento</span></header>${choices(workout)}</article>`;
+  return day.meals.map((m) => (m === host ? mealCard(m, day, ext) : (!host && m.slot === 'cena' ? card : '') + mealCard(m, day))).join('')
+    + (!host && !day.meals.some((m) => m.slot === 'cena') ? card : '');
 }
 
 /** Plan items as a list; an item with alternatives becomes "one of" with each choice on its own line. */
@@ -219,13 +234,7 @@ function renderDay(day) {
     ${missing ? '<p class="hint">Menu non ancora generato per questo giorno: vedi le opzioni del piano. Puoi generarlo da <a href="#/menu">Menu</a>.</p>' : ''}
 
     <section class="meals">
-      ${day.meals.map((m) => mealCard(m, day)).join('')}
-      ${day.sport && day.workoutSnack.length ? `
-        <article class="meal card workout">
-          <header><span class="slot-badge">⚡ Pre/post allenamento</span></header>
-          <h3>Spuntino sport</h3>
-          ${choices(day.workoutSnack)}
-        </article>` : ''}
+      ${mealsWithWorkout(day)}
     </section>
 
     ${day.tips.length ? `
@@ -467,6 +476,11 @@ async function profilePage() {
       <fieldset><legend>Giorni di sport</legend>${dayChips('sport', s.sport_days)}
         <p class="hint">In questi giorni compare lo spuntino pre/post allenamento. Puoi cambiare il singolo giorno dalla home.</p></fieldset>
       <fieldset><legend>Pranzo al lavoro</legend>${dayChips('work', s.work_lunch_days)}</fieldset>
+      <fieldset><legend>Convivente</legend>
+        <input name="household" value="${esc(s.household || '')}" placeholder="Username di chi vive con te" autocapitalize="none" autocomplete="off">
+        <p class="hint">${!me.household ? 'I pranzi e le cene a casa verranno coordinati: ingredienti in comune quando i due piani lo permettono. Anche l’altra persona deve inserire il tuo username (' + esc(me.user.username) + ').'
+          : me.household.linked ? '✓ Collegati: i prossimi menu useranno ingredienti in comune.'
+          : '⏳ In attesa: ' + esc(me.household.username) + ' deve inserire il tuo username (' + esc(me.user.username) + ') nel suo profilo.'}</p></fieldset>
       <fieldset><legend>Intolleranze e alimenti da evitare</legend>
         <input name="excluded" value="${esc((s.excluded || []).join(', '))}" placeholder="Es. lattosio, ricotta, frutta secca, crostacei" autocomplete="off">
         <p class="hint">Separati da virgola. Il menu non li propone e nelle modifiche sono disattivati. Il controllo è sul nome: scrivi gli alimenti come compaiono nel piano (es. "latte", "formaggio").</p></fieldset>
@@ -504,6 +518,7 @@ async function profilePage() {
     const body = {
       sport_days: f.getAll('sport').map(Number),
       work_lunch_days: f.getAll('work').map(Number),
+      household: String(f.get('household') || '').trim(),
       excluded: String(f.get('excluded') || '').split(',').map((x) => x.trim()).filter(Boolean),
       free_meal: Number(f.get('fm_wd')) ? { weekday: Number(f.get('fm_wd')), slot: f.get('fm_slot') } : null,
     };
@@ -511,6 +526,7 @@ async function profilePage() {
       const before = (me.settings.excluded || []).join(',');
       me.settings = await api('/settings', { method: 'PUT', body });
       toast(me.settings.excluded.join(',') !== before ? 'Salvato. Rigenera il menu da "Menu" per applicare le esclusioni ai giorni già creati' : 'Impostazioni salvate', 'ok');
+      if ((me.household?.username || null) !== me.settings.household) { me = await api('/me'); profilePage(); }
     } catch (err) { toast(err.message, 'error'); }
   };
   document.getElementById('wf').onsubmit = async (e) => {

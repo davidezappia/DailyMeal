@@ -44,6 +44,13 @@ test('excluded foods are swapped for another plan alternative', () => {
   assert.doesNotMatch(m.title, /ricotta/i);
 });
 
+test('the title cannot name a food that is not in the meal', () => {
+  const m = sanitizeMeal(plan, 3, { slot: 'pranzo', title: 'Riso con lenticchie e zucchine', items: [
+    pick('100g Cereali (riso, farro, orzo)', 'riso'), pick('160g Carne bianca (pollo, tacchino)', 'pollo'), pick('Verdure a piacere', 'zucchine'),
+  ] }, vocab);
+  assert.doesNotMatch(m.title, /lenticchie/i);
+});
+
 test('only the plan decides the free meal; slots missing from the plan are dropped', () => {
   assert.equal(sanitizeMeal(plan, 6, { slot: 'cena', title: 'x', items: [] }, vocab).free, true);
   assert.equal(sanitizeMeal(plan, 3, { slot: 'pranzo', title: 'Libero', free: true, items: [] }, vocab).free, false);

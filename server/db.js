@@ -63,6 +63,7 @@ const json = (row, col) => (row ? JSON.parse(row[col]) : null);
 
 export const q = {
   userByName: (u) => db.prepare('SELECT * FROM users WHERE username = ?').get(u),
+  user: (id) => db.prepare('SELECT id, username, name FROM users WHERE id = ?').get(id),
   userCount: () => db.prepare('SELECT COUNT(*) AS n FROM users').get().n,
   createUser: (username, name, hash) =>
     db.prepare('INSERT INTO users (username, name, pass_hash) VALUES (?, ?, ?)').run(username, name, hash).lastInsertRowid,

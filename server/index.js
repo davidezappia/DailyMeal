@@ -60,12 +60,14 @@ async function fillMenu(uid, from, days) {
   const plan = loadPlan(uid);
   const excluded = q.settings(uid).excluded || [];
   const vocab = vocabulary(plan);
+  const hm = housemate(uid);
   const dates = Array.from({ length: days }, (_, i) => addDays(from, i));
   const weeks = [];
   for (let i = 0; i < dates.length; i += 7) weeks.push(dates.slice(i, i + 7));
   // One call per week, in parallel: faster than one long generation.
   await Promise.all(weeks.map(async (w) => {
-    for (const d of await generateMenu(plan, w, q.favorites(uid), excluded)) {
+    const shared = hm ? w.map((date) => ({ date, meals: homeMeals(hm.id, date) })).filter((x) => x.meals.length) : [];
+    for (const d of await generateMenu(plan, w, q.favorites(uid), excluded, shared)) {
       if (!w.includes(d.date)) continue;
       // Never store what the model wrote as-is: rebuild every meal from plan options.
       const meals = d.meals.map((m) => sanitizeMeal(plan, isoWeekday(d.date), m, vocab, excluded)).filter(Boolean);
@@ -115,7 +117,8 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   const uid = req.user.id;
-  res.json({ ai: PROVIDER, user: req.user, plan: q.planMeta(uid) || null, settings: q.settings(uid), job: jobs.get(uid) || null, lastMenuDate: q.lastMenuDate(uid) });
+  const settings = q.settings(uid);
+  res.json({ ai: PROVIDER, household: settings.household ? { username: settings.household, linked: !!housemate(uid) } : null, user: req.user, plan: q.planMeta(uid) || null, settings: q.settings(uid), job: jobs.get(uid) || null, lastMenuDate: q.lastMenuDate(uid) });
 });
 
 // ---------- plan & menu
@@ -194,9 +197,27 @@ const dayView = (uid, date) => {
   return plan && composeDay({ date, plan, settings: q.settings(uid), events: q.events(uid, date), menuFor: (d) => q.menuDay(uid, d), favorites: q.favorites(uid) });
 };
 
+/** Housemate: linked only when both users named each other, so nobody can attach to someone else's menu. */
+function housemate(uid) {
+  const name = q.settings(uid).household;
+  const other = name && q.userByName(name);
+  return other && other.id !== uid && q.settings(other.id).household === q.user(uid).username
+    ? { id: other.id, name: other.name, username: other.username } : null;
+}
+/** Generated lunches and dinners eaten at home: the meals worth cooking together. */
+const homeMeals = (uid, date) => (dayView(uid, date)?.meals || [])
+  .filter((m) => ['pranzo', 'cena'].includes(m.slot) && m.generated && !m.free && !m.out)
+  .map(({ slot, title, items }) => ({ slot, title, items }));
+const withHousemate = (uid, view) => {
+  const hm = view && housemate(uid);
+  if (!hm) return view;
+  const theirs = homeMeals(hm.id, view.date);
+  return { ...view, housemate: hm.name, meals: view.meals.map((m) => ({ ...m, housemate: m.out ? null : theirs.find((t) => t.slot === m.slot) || null })) };
+};
+
 app.get('/api/day/:date', (req, res) => {
   if (!isDate(req.params.date)) return bad(res, 'Data non valida');
-  res.json(dayView(req.user.id, req.params.date));
+  res.json(withHousemate(req.user.id, dayView(req.user.id, req.params.date)));
 });
 
 app.get('/api/week', (req, res) => {
@@ -212,7 +233,7 @@ app.put('/api/day/:date/events', (req, res) => {
   const { sport, out = {}, note } = req.body;
   const cleanOut = Object.fromEntries(Object.entries(out).filter(([s, k]) => SLOTS.includes(s) && OUT_KINDS.includes(k)));
   q.saveEvents(req.user.id, date, { ...(typeof sport === 'boolean' && { sport }), out: cleanOut, note: text(note, 500) });
-  res.json(dayView(req.user.id, date));
+  res.json(withHousemate(req.user.id, dayView(req.user.id, date)));
 });
 
 app.put('/api/settings', (req, res) => {
@@ -223,6 +244,8 @@ app.put('/api/settings', (req, res) => {
     work_lunch_days: days(req.body.work_lunch_days),
     excluded: Array.isArray(req.body.excluded)
       ? [...new Set(req.body.excluded.map((x) => text(x, 40).toLowerCase()).filter(Boolean))].slice(0, 30) : [],
+    household: /^[a-z0-9._-]{3,40}$/.test(String(req.body.household || '').toLowerCase()) && String(req.body.household).toLowerCase() !== req.user.username
+      ? String(req.body.household).toLowerCase() : null,
     free_meal: Number.isInteger(fm.weekday) && fm.weekday >= 1 && fm.weekday <= 7 && SLOTS.includes(fm.slot) ? { weekday: fm.weekday, slot: fm.slot } : null,
   };
   q.saveSettings(req.user.id, settings);
