@@ -47,6 +47,7 @@ mercoledì si pranza in ufficio e che il pasto libero quest'anno è il venerdì.
 | 🔌 **Anche senza AI** | Il piano si converte con Claude o ChatGPT e si importa in JSON; i menu ruotano tra preferiti, pasti già fatti e alternative del piano. |
 | ⚖️ **Peso** | Registro settimanale con grafico. |
 | 👥 **Multi-utente** | Ognuno il suo account, piano e menu. |
+| 🏠 **Convivente** | Due account collegati (entrambi si indicano a vicenda) cucinano insieme: i menu usano ingredienti in comune, sotto ogni pasto vedi cosa mangia l'altro con le sue quantità, e se uno modifica pranzo o cena a casa il pasto dell'altro si aggiorna subito con le grammature del suo piano. |
 | 🌗 **Mobile first** | PWA installabile, tema chiaro e scuro automatico. |
 
 <p align="center">

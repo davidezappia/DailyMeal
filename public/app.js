@@ -337,9 +337,9 @@ function editMeal(day, m) {
 
   const save = async (body) => {
     try {
-      await api(`/menu/${m.sourceDate}/${m.slot}`, { method: 'PUT', body });
+      const { syncedWith } = await api(`/menu/${m.sourceDate}/${m.slot}`, { method: 'PUT', body: { ...body, day: day.date } });
       renderDay(await api(`/day/${day.date}`));
-      toast('Pasto aggiornato', 'ok');
+      toast(syncedWith ? `Pasto aggiornato anche per ${syncedWith}, con le sue quantità` : 'Pasto aggiornato', 'ok');
     } catch (e) { toast(e.message, 'error'); }
   };
   form.querySelectorAll('[data-fav]').forEach((b) => b.onclick = () => { $sheet.onclose = null; $sheet.close(); save({ favoriteId: Number(b.dataset.fav) }); });

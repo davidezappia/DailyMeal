@@ -56,3 +56,23 @@ test('only the plan decides the free meal; slots missing from the plan are dropp
   assert.equal(sanitizeMeal(plan, 3, { slot: 'pranzo', title: 'Libero', free: true, items: [] }, vocab).free, false);
   assert.equal(sanitizeMeal(plan, 3, { slot: 'merenda', title: 'x', items: [] }, vocab), null);
 });
+
+test('alignPicks moves a housemate meal into this plan with this plan quantities and details', async () => {
+  const { alignPicks } = await import('./guard.js');
+  const { planChoices } = await import('./day.js');
+  const herPlan = {
+    days: [{ weekday: 3, meals: [{ slot: 'pranzo', free: false, items: [] }] }],
+    shared_meals: [{ name: 'Pranzo', slot: 'pranzo', items: [
+      it(['80g Cereali (riso, farro, orzo)', '80g Pasta (bianca, integrale)', '300g Patate']),
+      it(['130g Carne bianca (pollo, tacchino)', '150g Pesce (merluzzo, orata)', '2 Uova']),
+      it(['Verdure a piacere']),
+      it(['1 cucchiaio Olio EVO']),
+    ] }],
+    tips: [],
+  };
+  const myMeal = ['100g Pasta (bianca, integrale) · fusilli', '160g Carne bianca (pollo, tacchino) · pollo', 'Verdure a piacere · zucchine'];
+  const picks = alignPicks(planChoices(herPlan, 3, 'pranzo'), myMeal);
+  const m = sanitizeMeal(herPlan, 3, { slot: 'pranzo', title: 'Fusilli con pollo e zucchine', items: picks }, vocabulary(herPlan));
+  assert.deepEqual(m.items, ['80g Pasta (bianca, integrale) · fusilli', '130g Carne bianca (pollo, tacchino) · pollo', 'Verdure a piacere · zucchine', '1 cucchiaio Olio EVO']);
+  assert.equal(m.title, 'Fusilli con pollo e zucchine');
+});

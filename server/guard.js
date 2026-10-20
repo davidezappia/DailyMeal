@@ -65,6 +65,33 @@ export const shortName = (item) => {
 };
 
 /**
+ * Translates a housemate's meal into this plan: for each food, the option that names the same things
+ * ("100g Pasta (integrale…)" → "80g Pasta (integrale…)"), keeping their detail. Unmatched foods are left
+ * to sanitizeMeal, which fills them from this plan and applies its checks.
+ * @param {{name:string, items:{options:string[]}[]}[]} groups this plan's choices for the slot
+ * @param {string[]} sourceItems the other meal's items ("option · detail")
+ */
+export function alignPicks(groups, sourceItems) {
+  const sources = sourceItems.map((s) => {
+    const [option, detail = ''] = s.split(DETAIL_SEP);
+    return { words: new Set(wordsOf(`${option} ${detail}`)), detail };
+  });
+  const picks = [];
+  for (const it of groups.flatMap((g) => g.items)) {
+    let best = null;
+    for (const option of it.options) {
+      const words = wordsOf(option);
+      for (const src of sources) {
+        const score = words.filter((w) => src.words.has(w)).length;
+        if (score > (best?.score || 0)) best = { score, option, detail: src.detail };
+      }
+    }
+    if (best) picks.push({ option: best.option, detail: best.detail });
+  }
+  return picks;
+}
+
+/**
  * Rebuilds one generated meal from plan options only.
  * @param {object} plan @param {number} wd plan weekday @param {{slot:string,title:string,free?:boolean,items:{option:string,detail:string}[]}} meal
  * @param {Set<string>} vocab @param {string[]} excluded

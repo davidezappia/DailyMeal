@@ -3,7 +3,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { q } from './db.js';
 import { parsePlan, generateMenu, ask, cleanPlan, SLOTS, PROVIDER, PROVIDERS, isoWeekday } from './ai.js';
 import { composeDay, addDays, planChoices, isPlanItem, mentionsExcluded } from './day.js';
-import { sanitizeMeal, vocabulary } from './guard.js';
+import { sanitizeMeal, vocabulary, alignPicks } from './guard.js';
 import { rotateMenu } from './rotation.js';
 import { importPlan, planPrompt, MAX_IMPORT_BYTES } from './plan-import.js';
 
@@ -202,8 +202,28 @@ app.put('/api/menu/:date/:slot', (req, res) => {
   q.saveMenuDay(req.user.id, date, [...meals, meal]);
   // A meal the user composed themselves is one they like: keep it to suggest again.
   if (req.body.favorite !== false) q.saveFavorite(req.user.id, slot, isoWeekday(date), meal.title, meal.items);
-  res.json({ ok: true });
+  res.json({ ok: true, syncedWith: isDate(req.body.day) ? syncHousemate(req.user.id, req.body.day, slot, meal) : null });
 });
+
+/**
+ * Cooking together: an edited lunch/dinner at home is mirrored on the housemate's same meal that day,
+ * rebuilt from their own plan (their quantities, their exclusions). Returns their name when it happened.
+ */
+function syncHousemate(uid, day, slot, meal) {
+  const hm = housemate(uid);
+  if (!hm || !['pranzo', 'cena'].includes(slot)) return null;
+  const mine = dayView(uid, day)?.meals.find((m) => m.slot === slot);
+  const theirs = dayView(hm.id, day)?.meals.find((m) => m.slot === slot);
+  if (!mine || mine.out || mine.free || !theirs || theirs.out || theirs.free) return null;
+  const plan = loadPlan(hm.id);
+  const wd = isoWeekday(theirs.sourceDate);
+  const picks = alignPicks(planChoices(plan, wd, slot), meal.items);
+  const synced = sanitizeMeal(plan, wd, { slot, title: meal.title, items: picks }, vocabulary(plan), q.settings(hm.id).excluded || []);
+  if (!synced) return null;
+  const meals = (q.menuDay(hm.id, theirs.sourceDate) || []).filter((m) => m.slot !== slot);
+  q.saveMenuDay(hm.id, theirs.sourceDate, [...meals, synced]);
+  return hm.name;
+}
 
 app.get('/api/favorites', (req, res) => res.json(q.favorites(req.user.id)));
 app.post('/api/favorites', (req, res) => {
