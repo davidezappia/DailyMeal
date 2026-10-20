@@ -4,7 +4,10 @@ import { extractText, getDocumentProxy } from 'unpdf';
 // AI_PROVIDER: one or more of anthropic, openrouter, gemini, azure, llamacpp, comma-separated and tried in order.
 // All but anthropic share the OpenAI-compatible chat/completions path.
 const KNOWN = ['anthropic', 'openrouter', 'gemini', 'azure', 'llamacpp'];
-export const PROVIDERS = (process.env.AI_PROVIDER || 'anthropic').split(',').map((p) => p.trim()).filter((p) => KNOWN.includes(p));
+const requested = (process.env.AI_PROVIDER || 'anthropic').split(',').map((p) => p.trim().replace(/^["']|["']$/g, '').toLowerCase()).filter(Boolean);
+export const PROVIDERS = requested.filter((p) => KNOWN.includes(p));
+// A typo must not silently fall back to Claude: say so, then fall back.
+for (const p of requested) if (!KNOWN.includes(p)) console.warn(`AI_PROVIDER: "${p}" non riconosciuto. Valori validi: ${KNOWN.join(', ')}`);
 if (!PROVIDERS.length) PROVIDERS.push('anthropic');
 export const PROVIDER = PROVIDERS.join(',');
 const list = (v, fallback = '') => (v || fallback).split(',').map((m) => m.trim()).filter(Boolean);
@@ -131,6 +134,7 @@ async function call(args) {
 }
 
 async function callClaude({ system, content, schema, maxTokens = 64000, effort = 'medium' }) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('Motore AI "anthropic" senza ANTHROPIC_API_KEY: controlla AI_PROVIDER nel file .env');
   const stream = client.beta.messages.stream({
     model: MODEL,
     max_tokens: maxTokens,
