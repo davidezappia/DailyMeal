@@ -111,7 +111,7 @@ OPENROUTER_API_KEY=sk-or-...
 
 - Crea la chiave su [openrouter.ai/keys](https://openrouter.ai/keys). I modelli gratuiti hanno il suffisso `:free` e limiti giornalieri di richieste, sufficienti per un uso familiare (un piano + 2 settimane di menu sono 3 richieste).
 - Serve un modello che supporti gli *structured outputs*: l'app chiede a OpenRouter di usare solo provider che rispettano lo schema JSON.
-- Puoi indicare più modelli separati da virgola: se uno è giù, va in timeout o risponde male, l.app riprova con il successivo.
+- Puoi indicare più modelli separati da virgola: se uno è giù, va in timeout o risponde male, l’app riprova con il successivo.
 - **Privacy**: il testo del PDF e il piano vengono inviati a un servizio esterno; i modelli gratuiti possono conservare o usare i dati. Carica PDF senza nome e dati personali. L'app non invia mai nome, autore e date del piano nelle richieste di menu e domande. Alcuni modelli gratuiti richiedono di abilitarne l'uso nelle [impostazioni privacy](https://openrouter.ai/settings/privacy) di OpenRouter.
 
 ## Configurazione
