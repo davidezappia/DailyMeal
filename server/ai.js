@@ -12,16 +12,20 @@ const OPENAI_COMPAT = {
     url: `${LLAMACPP_URL}/v1/chat/completions`,
     headers: {},
     // Reasoning models (Qwen3…) can spend the whole token budget thinking before the JSON: off for structured output.
+    models: [undefined], // llama-server serves whatever model it loaded
     extra: (schema) => (schema ? { chat_template_kwargs: { enable_thinking: false } } : {}),
   },
   openrouter: {
     name: 'OpenRouter',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'X-Title': 'DailyMeal' },
+    // Comma-separated list, tried in order: free models come and go, so a failure moves on to the next one.
+    models: (process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free,nvidia/nemotron-3.5-super-vl:free')
+      .split(',').map((m) => m.trim()).filter(Boolean),
     // require_parameters: route only to providers that honour response_format (JSON schema).
     // Long silent reasoning before the JSON trips OpenRouter's upstream idle timeout: off for structured output.
-    extra: (schema) => ({
-      model: process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free',
+    extra: (schema, model) => ({
+      model,
       provider: { require_parameters: true },
       ...(schema && { reasoning: { enabled: false } }),
     }),
@@ -125,19 +129,38 @@ async function toText(content) {
   return parts.join('\n\n');
 }
 
+/**
+ * Tries each configured model in turn. App-side rather than OpenRouter's own `models` fallback,
+ * which can't help once streaming has started (idle timeouts, invalid JSON mid-answer).
+ */
+async function callOpenAICompat(args) {
+  const { models, name } = OPENAI_COMPAT;
+  const userText = await toText(args.content);
+  let lastError;
+  for (const model of models) {
+    try {
+      return await callOnce({ ...args, userText }, model);
+    } catch (e) {
+      lastError = e;
+      if (models.length > 1) console.warn(`[ai] ${name} ${model} fallito: ${e.message}`);
+    }
+  }
+  throw models.length > 1 ? new Error(`Nessun modello disponibile (${models.length} provati). Ultimo errore: ${lastError.message}`) : lastError;
+}
+
 // Streams so slow generations aren't killed by fetch's 5-minute headers timeout.
-async function callOpenAICompat({ system, content, schema, maxTokens = 32000 }) {
+async function callOnce({ system, userText, schema, maxTokens = 32000 }, model) {
   const api = OPENAI_COMPAT;
   const res = await fetch(api.url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...api.headers },
     signal: AbortSignal.timeout(LLAMACPP_TIMEOUT_MS),
     body: JSON.stringify({
-      messages: [{ role: 'system', content: system }, { role: 'user', content: await toText(content) }],
+      messages: [{ role: 'system', content: system }, { role: 'user', content: userText }],
       max_tokens: maxTokens,
       temperature: schema ? 0.4 : 0.6,
       stream: true,
-      ...api.extra(schema),
+      ...api.extra(schema, model),
       ...(schema && { response_format: { type: 'json_schema', json_schema: { name: 'output', strict: true, schema } } }),
     }),
   }).catch((e) => { throw new Error(`${api.name} non raggiungibile: ${e.message}`); });

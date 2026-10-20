@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 // Provider is chosen at import time: set env before loading ai.js (each test file runs in its own process).
 process.env.AI_PROVIDER = 'openrouter';
 process.env.OPENROUTER_API_KEY = 'test-key';
-process.env.OPENROUTER_MODEL = 'some/model:free';
+process.env.OPENROUTER_MODEL = 'some/model:free, backup/model:free';
 const ai = await import('./ai.js');
 
 const sse = (...events) => new Response(
@@ -36,9 +36,25 @@ test('menu request goes to OpenRouter with key, model, JSON schema and no person
   assert.doesNotMatch(JSON.stringify(req.body.messages), /Mario Rossi|Bianchi/);
 });
 
+test('a failing model hands over to the next one, also when it fails mid-stream', async () => {
+  for (const firstFailure of [
+    () => new Response('{"error":{"message":"Provider returned error"}}', { status: 404 }),
+    () => sse(chunk('{"days":'), { error: { message: 'Upstream idle timeout exceeded' } }),
+  ]) {
+    const tried = [];
+    globalThis.fetch = async (url, init) => {
+      const { model } = JSON.parse(init.body);
+      tried.push(model);
+      return model === 'some/model:free' ? firstFailure() : sse(chunk('{"days":[]}', 'stop'));
+    };
+    assert.deepEqual(await ai.generateMenu(plan, ['2026-10-19']), []);
+    assert.deepEqual(tried, ['some/model:free', 'backup/model:free']);
+  }
+});
+
 test('rate limits and mid-stream errors become readable messages', async () => {
   globalThis.fetch = async () => new Response('{}', { status: 429 });
-  await assert.rejects(ai.ask(plan, {}, 'ciao'), /limite di richieste/);
+  await assert.rejects(ai.ask(plan, {}, 'ciao'), /Nessun modello disponibile \(2 provati\).*limite di richieste/);
   globalThis.fetch = async () => sse({ error: { message: 'Provider returned error' } });
   await assert.rejects(ai.ask(plan, {}, 'ciao'), /OpenRouter: Provider returned error/);
 });

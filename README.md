@@ -106,11 +106,12 @@ llama-server -m modello.gguf --host 0.0.0.0 --port 8080 -c 32768 --jinja
 ```env
 AI_PROVIDER=openrouter
 OPENROUTER_API_KEY=sk-or-...
-# OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+# OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free,nvidia/nemotron-3.5-super-vl:free
 ```
 
 - Crea la chiave su [openrouter.ai/keys](https://openrouter.ai/keys). I modelli gratuiti hanno il suffisso `:free` e limiti giornalieri di richieste, sufficienti per un uso familiare (un piano + 2 settimane di menu sono 3 richieste).
 - Serve un modello che supporti gli *structured outputs*: l'app chiede a OpenRouter di usare solo provider che rispettano lo schema JSON.
+- Puoi indicare più modelli separati da virgola: se uno è giù, va in timeout o risponde male, l.app riprova con il successivo.
 - **Privacy**: il testo del PDF e il piano vengono inviati a un servizio esterno; i modelli gratuiti possono conservare o usare i dati. Carica PDF senza nome e dati personali. L'app non invia mai nome, autore e date del piano nelle richieste di menu e domande. Alcuni modelli gratuiti richiedono di abilitarne l'uso nelle [impostazioni privacy](https://openrouter.ai/settings/privacy) di OpenRouter.
 
 ## Configurazione
@@ -119,7 +120,7 @@ OPENROUTER_API_KEY=sk-or-...
 |---|---|---|
 | `AI_PROVIDER` | `anthropic` | `anthropic`, `openrouter` oppure `llamacpp` |
 | `OPENROUTER_API_KEY` | | Chiave API OpenRouter |
-| `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Modello OpenRouter |
+| `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free,nvidia/nemotron-3.5-super-vl:free` | Modelli OpenRouter separati da virgola, provati in ordine: se uno fallisce si passa al successivo |
 | `ANTHROPIC_API_KEY` | | Chiave API Anthropic |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Modello Claude |
 | `LLAMACPP_URL` | `http://localhost:8080` | Indirizzo di `llama-server` |
