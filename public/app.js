@@ -522,7 +522,10 @@ async function profilePage() {
       <ul class="weights">${weights.slice(0, 8).map((w) => `<li><span>${fmtDate(w.date, { day: 'numeric', month: 'short', year: 'numeric' })}</span><strong>${w.kg} kg</strong><button class="icon-btn" data-del="${w.date}" aria-label="Elimina">×</button></li>`).join('')}</ul>
     </section>
 
-    <button class="btn ghost" id="logout">Esci</button>`;
+    <div class="account-actions">
+      <button class="btn ghost" id="logout">Esci</button>
+      <button class="link danger" id="delete-account">Elimina account e dati</button>
+    </div>`;
 
   document.getElementById('pdf')?.addEventListener('change', (e) => uploadPlan(e.target.files[0]));
   document.getElementById('import').onclick = importSheet;
@@ -553,6 +556,7 @@ async function profilePage() {
   $app.querySelectorAll('[data-unfav]').forEach((b) => b.onclick = async () => { await api(`/favorites/${b.dataset.unfav}`, { method: 'DELETE' }); profilePage(); });
   $app.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { await api(`/weights/${b.dataset.del}`, { method: 'DELETE' }); profilePage(); });
   document.getElementById('logout').onclick = async () => { await api('/logout', { method: 'POST' }); me = null; location.hash = '#/login'; };
+  document.getElementById('delete-account').onclick = deleteAccountSheet;
 }
 
 function planSummary(p) {
@@ -578,6 +582,32 @@ function weightChart(ws) {
       </svg>
       <figcaption>${delta > 0 ? '+' : ''}${delta} kg dal ${fmtDate(pts[0].date, { day: 'numeric', month: 'short' })}</figcaption>
     </figure>`;
+}
+
+function deleteAccountSheet() {
+  $sheet.innerHTML = `
+    <form class="stack" id="df">
+      <h2>Eliminare l’account?</h2>
+      <p>Verranno cancellati <strong>per sempre</strong> il tuo account (@${esc(me.user.username)}), il piano, i menu, i preferiti, le note e il registro del peso. Non si può annullare.</p>
+      <label>Conferma con la tua password<input type="password" name="password" autocomplete="current-password" required></label>
+      <div class="row">
+        <button type="button" class="btn" id="dcancel">Annulla</button>
+        <button class="btn danger-fill">Elimina definitivamente</button>
+      </div>
+    </form>`;
+  $sheet.onclose = null;
+  $sheet.showModal();
+  document.getElementById('dcancel').onclick = () => $sheet.close();
+  document.getElementById('df').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api('/account', { method: 'DELETE', body: { password: e.target.password.value } });
+      $sheet.close();
+      me = null;
+      location.hash = '#/login';
+      toast('Account eliminato', 'ok');
+    } catch (err) { toast(err.message, 'error'); }
+  };
 }
 
 async function importSheet() {

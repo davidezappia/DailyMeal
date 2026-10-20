@@ -92,6 +92,9 @@ ul { margin: 0; padding-left: 1.1em; }
 .btn:active { transform: scale(.97); }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .btn.ghost { display: block; margin: 24px auto 0; background: none; border: none; color: var(--danger); }
+.account-actions { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.link.danger { color: var(--danger); font-weight: 500; font-size: .85rem; opacity: .85; }
+.btn.danger-fill { background: var(--danger); color: #fff; border-color: transparent; }
 .btn:disabled { opacity: .5; cursor: progress; }
 .btn:focus-visible, .chip:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 2.5px solid var(--accent); outline-offset: 2px;

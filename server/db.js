@@ -9,6 +9,7 @@ export const db = new DatabaseSync(file);
 db.exec(`
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
+PRAGMA secure_delete = ON;
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
@@ -64,6 +65,23 @@ const json = (row, col) => (row ? JSON.parse(row[col]) : null);
 export const q = {
   userByName: (u) => db.prepare('SELECT * FROM users WHERE username = ?').get(u),
   user: (id) => db.prepare('SELECT id, username, name FROM users WHERE id = ?').get(id),
+  /** Deletes the account and, by cascade, every row it owns; unlinks housemates so a reused username can't inherit the link. */
+  deleteUser: (id) => {
+    const { username } = q.user(id);
+    db.exec('BEGIN');
+    try {
+      for (const u of db.prepare('SELECT id, settings FROM users WHERE id != ?').all(id)) {
+        const s = JSON.parse(u.settings);
+        if (s.household === username) db.prepare('UPDATE users SET settings = ? WHERE id = ?').run(JSON.stringify({ ...s, household: null }), u.id);
+      }
+      db.prepare('DELETE FROM users WHERE id = ?').run(id);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); // don't leave deleted pages in the WAL file
+  },
   userCount: () => db.prepare('SELECT COUNT(*) AS n FROM users').get().n,
   createUser: (username, name, hash) =>
     db.prepare('INSERT INTO users (username, name, pass_hash) VALUES (?, ?, ?)').run(username, name, hash).lastInsertRowid,

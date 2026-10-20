@@ -123,6 +123,21 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// Irreversible: asks for the password again so a stray tap or a borrowed phone can't wipe the account.
+app.delete('/api/account', (req, res) => {
+  if (throttled(req.ip)) return bad(res, 'Troppi tentativi, riprova tra un minuto', 429);
+  const u = q.userByName(req.user.username);
+  if (typeof req.body.password !== 'string' || !verify(req.body.password, u.pass_hash)) {
+    const f = fails.get(req.ip);
+    fails.set(req.ip, { n: f && Date.now() - f.t < 60_000 ? f.n + 1 : 1, t: Date.now() });
+    return bad(res, 'Password non corretta', 403); // not 401: the UI treats 401 as an expired session
+  }
+  q.deleteUser(u.id);
+  jobs.delete(u.id);
+  res.setHeader('Set-Cookie', 'sid=; Path=/; Max-Age=0');
+  res.json({ ok: true });
+});
+
 app.post('/api/logout', (req, res) => {
   q.deleteSession(cookie(req, 'sid'));
   res.setHeader('Set-Cookie', 'sid=; Path=/; Max-Age=0');
