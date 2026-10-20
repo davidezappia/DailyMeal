@@ -38,7 +38,7 @@ const OPENAI_COMPAT = {
     name: 'Google Gemini',
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     headers: { Authorization: `Bearer ${process.env.GEMINI_API_KEY}` },
-    models: list(process.env.GEMINI_MODEL, 'gemini-flash-latest'),
+    models: list(process.env.GEMINI_MODEL, 'gemini-3.8-flash,gemini-flash-latest,gemini-3.5-flash'),
     extra: (schema, model) => ({ model }),
   },
   azure: {

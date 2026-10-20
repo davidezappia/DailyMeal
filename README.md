@@ -120,7 +120,7 @@ OPENROUTER_API_KEY=sk-or-...
 AI_PROVIDER=azure,gemini          # più motori: se il primo fallisce si usa il successivo
 
 GEMINI_API_KEY=...                # aistudio.google.com/app/apikey
-GEMINI_MODEL=gemini-flash-latest
+GEMINI_MODEL=gemini-3.8-flash,gemini-flash-latest,gemini-3.5-flash
 
 AZURE_OPENAI_ENDPOINT=https://NOME-RISORSA.openai.azure.com
 AZURE_OPENAI_API_KEY=...
@@ -136,7 +136,7 @@ AZURE_OPENAI_DEPLOYMENT=nome-del-deployment
 |---|---|---|
 | `AI_PROVIDER` | `anthropic` | `anthropic`, `openrouter`, `gemini`, `azure`, `llamacpp`; più valori separati da virgola = catena di riserva |
 | `GEMINI_API_KEY` | | Chiave Google AI Studio |
-| `GEMINI_MODEL` | `gemini-flash-latest` | Modelli Gemini separati da virgola |
+| `GEMINI_MODEL` | `gemini-3.8-flash,gemini-flash-latest,gemini-3.5-flash` | Modelli Gemini separati da virgola, provati in ordine (i gratuiti sono spesso sovraccarichi) |
 | `AZURE_OPENAI_ENDPOINT` | | Es. `https://nome-risorsa.openai.azure.com` |
 | `AZURE_OPENAI_API_KEY` | | Chiave della risorsa Azure OpenAI |
 | `AZURE_OPENAI_DEPLOYMENT` | | Nome del deployment (più deployment separati da virgola) |
