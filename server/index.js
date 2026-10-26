@@ -218,8 +218,11 @@ function syncHousemate(uid, day, slot, meal) {
   const plan = loadPlan(hm.id);
   const wd = isoWeekday(theirs.sourceDate);
   const picks = alignPicks(planChoices(plan, wd, slot), meal.items);
-  const synced = sanitizeMeal(plan, wd, { slot, title: meal.title, items: picks }, vocabulary(plan), q.settings(hm.id).excluded || []);
+  const excluded = q.settings(hm.id).excluded || [];
+  const synced = sanitizeMeal(plan, wd, { slot, title: meal.title, items: picks }, vocabulary(plan), excluded);
   if (!synced) return null;
+  // Same dish for both: the name a person chose is kept, unless it names a food the housemate must avoid.
+  if (!mentionsExcluded(meal.title, excluded)) synced.title = meal.title;
   const meals = (q.menuDay(hm.id, theirs.sourceDate) || []).filter((m) => m.slot !== slot);
   q.saveMenuDay(hm.id, theirs.sourceDate, [...meals, synced]);
   return hm.name;
